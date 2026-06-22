@@ -37,20 +37,22 @@ Project-control rule:
 
 ## Current status
 
-Current step: Step 2 — FastAPI app shell.
+Current step: Step 3 — Database configuration and Docker Compose baseline.
 
 Status: Complete with local environment limitations documented.
 
-Approximate project completion: 8%.
+Approximate project completion: 12%.
 
 Current summary:
 
 * Vault has an initial `src/` Python package layout.
 * Tooling is configured in `pyproject.toml` for pytest, Ruff, and mypy.
-* Runtime dependencies now include FastAPI.
-* Development dependencies now include httpx for FastAPI test-client support.
+* Runtime dependencies include FastAPI, SQLAlchemy, and psycopg.
+* Development dependencies include httpx for FastAPI test-client support.
 * The package exposes a simple string version constant.
-* A small typed settings helper exists in `src/vault/config.py`.
+* A typed settings helper exists in `src/vault/config.py`.
+* Settings include app name, environment, database URL, and upload directory.
+* Settings have safe local defaults and do not require real secrets to import.
 * A base `VaultError` exists in `src/vault/exceptions.py`.
 * A minimal FastAPI app factory exists at `src/vault/api/main.py`.
 * The app is configured with the Vault title, honest description, and package
@@ -60,24 +62,38 @@ Current summary:
 * The OpenAPI schema is reachable at `/openapi.json`.
 * A placeholder `api/dependencies.py` exists for later route dependencies.
 * A thin CLI shell exists at `scripts/run_vault.py` and supports `--help`.
-* Tests cover package import, CLI help, app creation, health response, and
-  OpenAPI schema access.
-* No database connections, auth, organizations, uploads, reviews, audit logs,
-  exports, Docker files, CI files, sample outputs, or local databases were
-  added.
+* `src/vault/database.py` contains small typed SQLAlchemy helpers for creating
+  an engine and session factory without connecting at import time.
+* `.env.example` contains safe fake local database and upload settings.
+* `docker-compose.yml` defines a local-only PostgreSQL service with a named
+  volume for database data.
+* Tests cover package import, CLI help, app creation, health response, OpenAPI
+  schema access, settings defaults, environment database URL loading, engine
+  creation, settings-based engine creation, and session factory creation.
+* No ORM models, Alembic migrations, table creation, auth, organizations,
+  uploads, reviews, audit logs, exports, CI files, sample outputs, local
+  databases, or application container were added.
 
 Current validation status:
 
 ```text
-python -m ruff check .          PASS
+python -m ruff check .           PASS
 python -m mypy src scripts tests PASS
-python -m pytest                PASS, 7 passed
-python -m bandit -r src         PASS, no issues identified
-python -m pip_audit             NOT COMPLETED: DNS/network failure while
-                                querying pypi.org from this environment
+python -m pytest                 PASS, 12 passed
+python -m bandit -r src          PASS, no issues identified
+python -m pip_audit              NOT COMPLETED: DNS/network failure while
+                                 querying pypi.org from this environment
 python scripts/run_vault.py --help PASS
-git status                      NOT COMPLETED: uploaded repo zip did not
-                                include .git metadata in this environment
+docker compose config            NOT COMPLETED: Docker is not installed in
+                                 this environment
+docker compose up -d db          SKIPPED: Docker is not installed in this
+                                 environment
+docker compose ps                SKIPPED: Docker is not installed in this
+                                 environment
+docker compose down              SKIPPED: Docker is not installed in this
+                                 environment
+git status                       NOT COMPLETED: uploaded repo zip did not
+                                 include .git metadata in this environment
 ```
 
 Required validation commands:
@@ -98,7 +114,7 @@ Validation rule:
 Next planned step:
 
 ```text
-Step 3 — Database configuration and Docker Compose baseline.
+Step 4 — Alembic baseline.
 ```
 
 ---
@@ -1728,6 +1744,140 @@ Suggested commit message:
 
 ```text
 Add FastAPI app shell
+```
+
+---
+
+### Step 3 — Database configuration and Docker Compose baseline
+
+Status: Complete with documented environment limitations.
+
+Goal:
+
+* Add safe database configuration helpers and a Docker Compose PostgreSQL
+  baseline before models and migrations are added.
+
+Completed work:
+
+* Added SQLAlchemy as a runtime dependency in `pyproject.toml`.
+* Added psycopg as the PostgreSQL runtime driver in `pyproject.toml`.
+* Kept the existing typed dataclass settings approach instead of adding
+  `pydantic-settings`, because this step does not need it yet.
+* Confirmed settings include app name, environment, database URL, and upload
+  directory.
+* Preserved safe local defaults so imports and tests do not require real
+  secrets or private environment variables.
+* Updated `.env.example` with fake local PostgreSQL and upload settings only.
+* Added `docker-compose.yml` with a single local PostgreSQL service.
+* Configured the PostgreSQL service with environment-variable defaults, safe
+  local-only credentials, a named volume, port mapping, and a healthcheck.
+* Added `src/vault/database.py` with typed helpers for SQLAlchemy engine
+  creation, session factory creation, and settings-based engine creation.
+* Avoided global engines and import-time database connections.
+* Avoided ORM models, Alembic migrations, table creation, database startup
+  side effects, auth, organizations, uploads, reviews, audit logs, exports,
+  CI, sample outputs, local databases, and application containers.
+* Added tests for settings defaults, environment database URL loading, engine
+  creation without a live database connection, settings-based engine creation,
+  and session factory creation.
+
+Files created or edited:
+
+```text
+pyproject.toml
+.env.example
+docker-compose.yml
+src/vault/database.py
+tests/test_config.py
+tests/test_database_config.py
+docs/Project_State.md
+```
+
+Commands run:
+
+```bash
+python -m pip install -e ".[dev]"
+python -m ruff check .
+python -m mypy src scripts tests
+python -m pytest
+python -m bandit -r src
+python -m pip_audit
+python scripts/run_vault.py --help
+docker compose config
+git status --short
+```
+
+Validation results:
+
+```text
+python -m pip install -e ".[dev]"
+Passed. Editable install completed with runtime and development dependencies.
+
+python -m ruff check .
+All checks passed.
+
+python -m mypy src scripts tests
+Success: no issues found in 15 source files.
+
+python -m pytest
+12 passed.
+
+python -m bandit -r src
+No issues identified.
+
+python -m pip_audit
+Did not complete in this environment. pip-audit was installed and run, but
+failed while trying to resolve pypi.org due to DNS/network access. No project
+vulnerability result was produced.
+
+python scripts/run_vault.py --help
+Passed. Help text displayed.
+
+docker compose config
+Did not complete in this environment because Docker is not installed.
+
+Optional Docker runtime checks
+Skipped in this environment because Docker is not installed:
+
+* docker compose up -d db
+* docker compose ps
+* docker compose down
+
+git status --short
+Did not complete in this environment because the uploaded repo zip did not
+include `.git` metadata.
+```
+
+Validation note:
+
+```text
+The code validation checks that can run offline all passed. The pip-audit,
+Docker, and git status limitations are environment issues from this uploaded
+zip/runtime, not implemented project behavior.
+```
+
+Definition of done:
+
+* Settings include a typed database URL.
+* `.env.example` has safe local database values.
+* `docker-compose.yml` defines a local PostgreSQL service.
+* Database helpers can create an engine and session factory without connecting
+  at import time.
+* Tests cover settings and database helper behavior.
+* Existing tests still pass.
+* Ruff passes.
+* Mypy passes.
+* Pytest passes.
+* Bandit passes.
+* pip-audit was run and the DNS/network limitation is documented.
+* CLI help works.
+* Docker checks were attempted or explicitly skipped with the reason.
+* Project State is updated.
+
+Suggested commit message:
+
+```text
+Add database configuration and Docker Compose baseline
 ```
 
 ---
