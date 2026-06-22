@@ -37,24 +37,38 @@ Project-control rule:
 
 ## Current status
 
-Current step: Step 0 — Planning.
+Current step: Step 1 — Project skeleton and tooling baseline.
 
-Status: Planning files drafted.
+Status: Complete with local environment limitations documented.
 
-Approximate project completion: 0%.
+Approximate project completion: 5%.
 
 Current summary:
 
-* Vault has been selected as the next portfolio project.
-* Vault is planned as a secure accounting document workflow web app.
-* The project will address online app development, authentication, authorization, security, PostgreSQL, file-upload safety, audit logs, and Docker-based local development.
-* No application code has been implemented yet.
-* No validation commands have been run yet.
+* Vault now has an initial `src/` Python package layout.
+* Tooling is configured in `pyproject.toml` for pytest, Ruff, and mypy.
+* Development tooling dependencies are declared for pytest, Ruff, mypy,
+  Bandit, and pip-audit.
+* The package exposes a simple string version constant.
+* A small typed settings helper exists in `src/vault/config.py`.
+* A base `VaultError` exists in `src/vault/exceptions.py`.
+* A thin CLI shell exists at `scripts/run_vault.py` and supports `--help`.
+* The first smoke tests pass.
+* No app features, database connections, uploads, auth, audit logs, exports,
+  Docker files, CI files, sample outputs, or local databases were added.
 
 Current validation status:
 
 ```text
-Current validation: not run yet. Planning files only.
+python -m ruff check .          PASS
+python -m mypy src scripts tests PASS
+python -m pytest                PASS, 4 passed
+python -m bandit -r src         PASS, no issues identified
+python -m pip_audit             NOT COMPLETED: DNS/network failure while
+                                querying pypi.org from this environment
+python scripts/run_vault.py --help PASS
+git status                      NOT COMPLETED: uploaded repo zip did not
+                                include .git metadata in this environment
 ```
 
 Required validation commands:
@@ -75,7 +89,7 @@ Validation rule:
 Next planned step:
 
 ```text
-Step 1 — Project skeleton and tooling baseline.
+Step 2 — FastAPI app shell.
 ```
 
 ---
@@ -1479,31 +1493,110 @@ Add Vault planning docs
 
 ### Step 1 — Project skeleton and tooling baseline
 
-Status: Not started.
+Status: Complete with documented environment limitations.
 
 Goal:
 
 * Create the initial Python package, tooling configuration, and first smoke test.
 
-Expected work:
+Completed work:
 
-* Add `pyproject.toml`.
-* Add `.gitignore`.
-* Add `.env.example`.
-* Add `src/vault/__init__.py`.
-* Add `src/vault/config.py`.
-* Add `src/vault/exceptions.py`.
-* Add `scripts/__init__.py`.
-* Add `scripts/run_vault.py`.
-* Add `tests/test_package_import.py`.
-* Configure pytest, Ruff, mypy, Bandit, and pip-audit.
+* Added `pyproject.toml` with `src/` package layout configuration.
+* Configured the project/package name as `vault`.
+* Declared development dependencies for pytest, Ruff, mypy, Bandit, and
+  pip-audit.
+* Configured pytest to discover tests in `tests/`.
+* Configured Ruff with an 88-character line length.
+* Configured mypy for strict checking against `src`, `scripts`, and `tests`.
+* Added `.gitignore` for virtual environments, Python caches, test caches,
+  coverage files, `.env`, local databases, local exports, uploaded files,
+  and build metadata.
+* Added `.env.example` with safe fake/default environment variable names.
+* Added `.python-version`.
+* Added minimal importable `vault` package.
+* Added `src/vault/__init__.py` with a string package version constant.
+* Added `src/vault/config.py` with a small typed settings helper.
+* Added `src/vault/exceptions.py` with base `VaultError`.
+* Added `scripts/__init__.py`.
+* Added `scripts/run_vault.py` as a thin CLI shell.
+* Added `tests/test_package_import.py` with package import, version,
+  exception import, and CLI help smoke tests.
+
+Files created or edited:
+
+```text
+pyproject.toml
+.gitignore
+.env.example
+.python-version
+src/vault/__init__.py
+src/vault/config.py
+src/vault/exceptions.py
+scripts/__init__.py
+scripts/run_vault.py
+tests/test_package_import.py
+docs/Project_State.md
+```
+
+Commands run:
+
+```bash
+python -m pip install -e ".[dev]"
+python -m ruff check .
+python -m mypy src scripts tests
+python -m pytest
+python -m bandit -r src
+python -m pip_audit
+python scripts/run_vault.py --help
+git status --short
+```
+
+Validation results:
+
+```text
+python -m ruff check .
+All checks passed.
+
+python -m mypy src scripts tests
+Success: no issues found in 6 source files.
+
+python -m pytest
+4 passed.
+
+python -m bandit -r src
+No issues identified.
+
+python -m pip_audit
+Did not complete in this environment. pip-audit was installed and run, but
+failed while trying to resolve pypi.org due to DNS/network access. No project
+vulnerability result was produced.
+
+python scripts/run_vault.py --help
+Passed. Help text displayed.
+
+git status --short
+Did not complete in this environment because the uploaded repo zip did not
+include `.git` metadata.
+```
+
+Validation note:
+
+```text
+The code validation checks that can run offline all passed. The pip-audit and
+git status limitations are environment issues from this uploaded zip/runtime,
+not implemented project behavior.
+```
 
 Definition of done:
 
 * Package imports.
 * First smoke test passes.
+* CLI help works.
 * Ruff passes.
-* Mypy passes or any early limitation is documented.
+* Mypy passes.
+* Pytest passes.
+* Bandit passes.
+* pip-audit was run and the DNS/network limitation is documented.
 * Project State is updated.
 
 Suggested commit message:
