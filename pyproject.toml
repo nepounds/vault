@@ -9,6 +9,7 @@ description = "Secure accounting document workflow web app."
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "alembic",
     "fastapi",
     "psycopg",
     "sqlalchemy",

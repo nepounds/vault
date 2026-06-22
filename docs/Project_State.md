@@ -37,17 +37,18 @@ Project-control rule:
 
 ## Current status
 
-Current step: Step 3 — Database configuration and Docker Compose baseline.
+Current step: Step 4 — Alembic baseline.
 
-Status: Complete with local environment limitations documented.
+Status: In progress pending final local validation after the Alembic test
+environment-isolation fix.
 
-Approximate project completion: 12%.
+Approximate project completion: 15%.
 
 Current summary:
 
 * Vault has an initial `src/` Python package layout.
 * Tooling is configured in `pyproject.toml` for pytest, Ruff, and mypy.
-* Runtime dependencies include FastAPI, SQLAlchemy, and psycopg.
+* Runtime dependencies include FastAPI, SQLAlchemy, psycopg, and Alembic.
 * Development dependencies include httpx for FastAPI test-client support.
 * The package exposes a simple string version constant.
 * A typed settings helper exists in `src/vault/config.py`.
@@ -67,33 +68,50 @@ Current summary:
 * `.env.example` contains safe fake local database and upload settings.
 * `docker-compose.yml` defines a local-only PostgreSQL service with a named
   volume for database data.
+* Alembic migration infrastructure now exists at the repository root.
+* `alembic.ini`, `alembic/env.py`, `alembic/script.py.mako`, and
+  `alembic/versions/` exist.
+* One empty baseline migration exists at
+  `alembic/versions/0001_baseline.py`.
+* The baseline migration has `down_revision = None` and empty `upgrade()` and
+  `downgrade()` functions.
+* Alembic is configured to read the Vault database URL from project settings.
+* Alembic history works without requiring PostgreSQL.
+* The Docker-backed Alembic smoke check was run locally and successfully
+  reported `0001_baseline (head)`.
 * Tests cover package import, CLI help, app creation, health response, OpenAPI
   schema access, settings defaults, environment database URL loading, engine
-  creation, settings-based engine creation, and session factory creation.
-* No ORM models, Alembic migrations, table creation, auth, organizations,
-  uploads, reviews, audit logs, exports, CI files, sample outputs, local
-  databases, or application container were added.
+  creation, settings-based engine creation, session factory creation, Alembic
+  file presence, baseline revision structure, and baseline no-op behavior.
+* No ORM models, database tables, auth, organizations, uploads, reviews, audit
+  logs, exports, CI files, sample outputs, local databases, or application
+  container were added.
 
 Current validation status:
 
 ```text
-python -m ruff check .           PASS
-python -m mypy src scripts tests PASS
-python -m pytest                 PASS, 12 passed
-python -m bandit -r src          PASS, no issues identified
-python -m pip_audit              NOT COMPLETED: DNS/network failure while
-                                 querying pypi.org from this environment
-python scripts/run_vault.py --help PASS
-docker compose config            NOT COMPLETED: Docker is not installed in
-                                 this environment
-docker compose up -d db          SKIPPED: Docker is not installed in this
-                                 environment
-docker compose ps                SKIPPED: Docker is not installed in this
-                                 environment
-docker compose down              SKIPPED: Docker is not installed in this
-                                 environment
-git status                       NOT COMPLETED: uploaded repo zip did not
-                                 include .git metadata in this environment
+python -m ruff check .           PENDING RERUN after local test patch
+python -m mypy src scripts tests PENDING RERUN after local test patch
+python -m pytest                 FAILED locally: 19 passed, 1 failed. Failure
+                                 was caused by the current PowerShell session
+                                 retaining VAULT_DATABASE_URL from the optional
+                                 Docker-backed Alembic smoke check. Patch
+                                 tests/test_alembic_config.py to clear the
+                                 env var with monkeypatch before loading
+                                 alembic/env.py, then rerun pytest.
+python -m bandit -r src          PENDING RERUN after local test patch
+python -m pip_audit              PENDING RERUN locally
+python scripts/run_vault.py --help PENDING RERUN after local test patch
+python -m alembic history        PASS
+python -m alembic current        PASS after Docker/database URL setup; current
+                                 revision reported as 0001_baseline (head)
+python -m alembic upgrade head   PASS after Docker/database URL setup; empty
+                                 baseline migration applied
+docker compose up -d db          PASS locally when Docker was used for the
+                                 optional migration smoke check
+docker compose down              TODO after optional smoke check if not already
+                                 run
+git status                       PENDING after local test patch and validation
 ```
 
 Required validation commands:
@@ -114,10 +132,8 @@ Validation rule:
 Next planned step:
 
 ```text
-Step 4 — Alembic baseline.
+Step 5 — Core database model base and user model.
 ```
-
----
 
 ## Project name
 
@@ -1878,6 +1894,164 @@ Suggested commit message:
 
 ```text
 Add database configuration and Docker Compose baseline
+```
+
+---
+
+### Step 4 — Alembic baseline
+
+Status: In progress pending final local validation after the test isolation
+patch.
+
+Goal:
+
+* Add Alembic migration infrastructure with an empty baseline revision so Vault
+  is ready for SQLAlchemy models in the next step without creating tables yet.
+
+Completed work:
+
+* Added Alembic as a runtime dependency.
+* Added `alembic.ini` at the repository root.
+* Added `alembic/env.py`.
+* Added `alembic/script.py.mako`.
+* Added `alembic/versions/`.
+* Added `alembic/versions/.gitkeep`.
+* Added one empty baseline migration revision at
+  `alembic/versions/0001_baseline.py`.
+* Configured the baseline migration with `down_revision = None`.
+* Kept the baseline `upgrade()` and `downgrade()` functions empty.
+* Avoided table creation and ORM model implementation.
+* Configured Alembic to read the database URL from Vault settings.
+* Kept Alembic import/config behavior free of import-time database connections.
+* Added tests for Alembic config files, versions folder, baseline revision
+  count, baseline revision metadata, empty upgrade behavior, empty downgrade
+  behavior, and import behavior.
+* Ran optional Docker-backed Alembic smoke commands locally after setting
+  `VAULT_DATABASE_URL` in PowerShell.
+* Confirmed `python -m alembic upgrade head` connects to PostgreSQL and applies
+  the empty baseline migration.
+* Confirmed `python -m alembic current` reports `0001_baseline (head)`.
+
+Additional local troubleshooting notes:
+
+* Initial `python -m alembic current` failed because `psycopg` was installed
+  without a usable local libpq wrapper on Windows.
+* The local development fix was to install/use the binary psycopg extra.
+* A later `python -m alembic current` attempt failed because the connection URL
+  did not include a password.
+* PowerShell requires environment variables to be set with
+  `$env:VAULT_DATABASE_URL=...`, not Bash-style `VAULT_DATABASE_URL=...`.
+* After Docker was running and the PowerShell environment variable was set,
+  `python -m alembic upgrade head` and `python -m alembic current` passed.
+* A later pytest run failed because the same PowerShell session still had
+  `VAULT_DATABASE_URL` set to the Docker database URL, while the Alembic import
+  test expected the safe default URL.
+* The correct test fix is to clear `VAULT_DATABASE_URL` with `monkeypatch`
+  inside `test_alembic_env_import_does_not_require_database_connection()`
+  before loading `alembic/env.py`.
+
+Files created or edited:
+
+```text
+pyproject.toml
+alembic.ini
+alembic/env.py
+alembic/script.py.mako
+alembic/versions/.gitkeep
+alembic/versions/0001_baseline.py
+src/vault/database.py
+tests/test_alembic_config.py
+docs/Project_State.md
+```
+
+Commands run or attempted:
+
+```bash
+python -m pip install -e ".[dev]"
+python -m pip install "psycopg[binary]"
+python -m ruff check .
+python -m mypy src scripts tests
+python -m pytest
+python -m bandit -r src
+python -m pip_audit
+python scripts/run_vault.py --help
+python -m alembic history
+python -m alembic current
+docker compose up -d db
+python -m alembic upgrade head
+python -m alembic current
+docker compose down
+git status
+```
+
+Validation results so far:
+
+```text
+python -m alembic history
+Passed. Alembic history can be read without connecting to PostgreSQL.
+
+python -m alembic upgrade head
+Passed after Docker/database URL setup. Alembic connected to the local
+PostgreSQL database and applied the empty baseline migration.
+
+python -m alembic current
+Passed after Docker/database URL setup. Current revision reported as
+0001_baseline (head).
+
+python -m pytest
+Failed locally after the optional Alembic smoke check because the PowerShell
+session retained VAULT_DATABASE_URL. The failed test was
+test_alembic_env_import_does_not_require_database_connection. It expected the
+safe default URL but received the Docker URL from the shell environment. Patch
+the test to clear VAULT_DATABASE_URL with monkeypatch before importing
+alembic/env.py, then rerun pytest.
+
+Remaining required validation
+Pending rerun after the local test patch:
+
+* python -m ruff check .
+* python -m mypy src scripts tests
+* python -m pytest
+* python -m bandit -r src
+* python -m pip_audit
+* python scripts/run_vault.py --help
+* git status
+```
+
+Validation note:
+
+```text
+Step 4 should not be marked complete until the Alembic test is patched and the
+required validation suite is rerun. The Docker-backed Alembic smoke check itself
+passed after the local environment was corrected.
+```
+
+Definition of done:
+
+* Alembic is included as a project dependency.
+* `alembic.ini` exists.
+* Alembic environment files exist.
+* Alembic versions folder exists.
+* One empty baseline revision exists.
+* No tables or ORM models are created in this step.
+* Alembic setup uses Vault database settings safely.
+* Alembic setup does not connect at import time during normal tests.
+* Tests cover the Alembic baseline structure.
+* Existing tests still pass after the environment-isolation test fix.
+* Ruff passes.
+* Mypy passes.
+* Pytest passes.
+* Bandit passes or documented findings are explained.
+* pip-audit passes or documented findings are explained.
+* CLI help still works.
+* Project State is updated.
+* `git status` shows only expected files.
+* No generated private/local files are staged.
+
+Suggested commit message after validation passes:
+
+```text
+Add Alembic baseline
 ```
 
 ---

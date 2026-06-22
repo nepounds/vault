@@ -5,11 +5,16 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 from sqlalchemy import Engine, create_engine
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from vault.config import VaultSettings, load_settings
 
 SessionFactory = sessionmaker[Session]
+
+
+class Base(DeclarativeBase):
+    """Base class for future SQLAlchemy ORM models."""
+
 
 
 def create_database_engine(database_url: str) -> Engine:
