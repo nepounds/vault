@@ -37,12 +37,11 @@ Project-control rule:
 
 ## Current status
 
-Current step: Step 4 — Alembic baseline.
+Current step: Step 5 — Core database model base and user model.
 
-Status: In progress pending final local validation after the Alembic test
-environment-isolation fix.
+Status: Complete with documented environment limitations.
 
-Approximate project completion: 15%.
+Approximate project completion: 19%.
 
 Current summary:
 
@@ -68,50 +67,61 @@ Current summary:
 * `.env.example` contains safe fake local database and upload settings.
 * `docker-compose.yml` defines a local-only PostgreSQL service with a named
   volume for database data.
-* Alembic migration infrastructure now exists at the repository root.
+* Alembic migration infrastructure exists at the repository root.
 * `alembic.ini`, `alembic/env.py`, `alembic/script.py.mako`, and
   `alembic/versions/` exist.
 * One empty baseline migration exists at
   `alembic/versions/0001_baseline.py`.
 * The baseline migration has `down_revision = None` and empty `upgrade()` and
   `downgrade()` functions.
-* Alembic is configured to read the Vault database URL from project settings.
-* Alembic history works without requiring PostgreSQL.
-* The Docker-backed Alembic smoke check was run locally and successfully
-  reported `0001_baseline (head)`.
+* A shared SQLAlchemy model metadata import exists at `src/vault/models.py`.
+* The shared SQLAlchemy declarative base remains in `src/vault/database.py` and
+  is re-exported through `src/vault/models.py` with imported models.
+* `src/vault/auth/models.py` defines the initial `User` ORM model.
+* The `User` model includes `id`, `email`, `password_hash`, `full_name`,
+  `is_active`, and `created_at`.
+* User IDs use UUID primary keys.
+* `created_at` uses a UTC-aware application-side timestamp default.
+* User email is non-null and unique.
+* Password hashing behavior is not implemented yet; only the future
+  `password_hash` storage field exists.
+* Alembic `target_metadata` now points at Vault model metadata that includes
+  the `users` table.
+* A create-users migration exists at
+  `alembic/versions/0002_create_users.py`.
+* The create-users migration creates only the `users` table and its email uniqueness rule.
+* The create-users migration downgrade drops only the users table and its email
+  index.
 * Tests cover package import, CLI help, app creation, health response, OpenAPI
   schema access, settings defaults, environment database URL loading, engine
   creation, settings-based engine creation, session factory creation, Alembic
-  file presence, baseline revision structure, and baseline no-op behavior.
-* No ORM models, database tables, auth, organizations, uploads, reviews, audit
-  logs, exports, CI files, sample outputs, local databases, or application
-  container were added.
+  file presence, baseline revision structure, baseline no-op behavior,
+  create-users migration structure, Alembic model metadata import behavior,
+  user table name, user columns, non-null user columns, email uniqueness, and
+  model metadata registration.
+* No registration route, login route, password hashing service, JWT/session
+  handling, organizations, memberships, RBAC, uploads, reviews, audit logs,
+  exports, CI files, sample outputs, local databases, or application container
+  were added.
 
 Current validation status:
 
 ```text
-python -m ruff check .           PENDING RERUN after local test patch
-python -m mypy src scripts tests PENDING RERUN after local test patch
-python -m pytest                 FAILED locally: 19 passed, 1 failed. Failure
-                                 was caused by the current PowerShell session
-                                 retaining VAULT_DATABASE_URL from the optional
-                                 Docker-backed Alembic smoke check. Patch
-                                 tests/test_alembic_config.py to clear the
-                                 env var with monkeypatch before loading
-                                 alembic/env.py, then rerun pytest.
-python -m bandit -r src          PENDING RERUN after local test patch
-python -m pip_audit              PENDING RERUN locally
-python scripts/run_vault.py --help PENDING RERUN after local test patch
+python -m ruff check .           PASS
+python -m mypy src scripts tests PASS
+python -m pytest                 PASS, 30 passed
+python -m bandit -r src          PASS, no issues identified
+python -m pip_audit              DID NOT COMPLETE in this environment because
+                                 pypi.org DNS resolution failed
+python scripts/run_vault.py --help PASS
 python -m alembic history        PASS
-python -m alembic current        PASS after Docker/database URL setup; current
-                                 revision reported as 0001_baseline (head)
-python -m alembic upgrade head   PASS after Docker/database URL setup; empty
-                                 baseline migration applied
-docker compose up -d db          PASS locally when Docker was used for the
-                                 optional migration smoke check
-docker compose down              TODO after optional smoke check if not already
-                                 run
-git status                       PENDING after local test patch and validation
+docker compose up -d db          SKIPPED in this environment because Docker is
+                                 not installed
+Docker-backed migration checks    SKIPPED in this environment because Docker is
+                                 not installed
+git status                       DID NOT COMPLETE in this environment because
+                                 the uploaded repo zip did not include `.git`
+                                 metadata
 ```
 
 Required validation commands:
@@ -132,7 +142,7 @@ Validation rule:
 Next planned step:
 
 ```text
-Step 5 — Core database model base and user model.
+Step 6 — Password hashing and user creation service.
 ```
 
 ## Project name
@@ -2052,6 +2062,152 @@ Suggested commit message after validation passes:
 
 ```text
 Add Alembic baseline
+```
+
+---
+
+
+### Step 5 — Core database model base and user model
+
+Status: Complete with documented environment limitations.
+
+Goal:
+
+* Add the shared SQLAlchemy model metadata path, initial `User` ORM model, and
+  one Alembic migration that creates the `users` table.
+
+Completed work:
+
+* Added `src/vault/auth/__init__.py`.
+* Added `src/vault/auth/models.py`.
+* Added a typed SQLAlchemy 2-style `User` ORM model.
+* Added the official user fields: `id`, `email`, `password_hash`,
+  `full_name`, `is_active`, and `created_at`.
+* Used UUID primary keys for users.
+* Used UTC-aware application-side timestamp generation for `created_at`.
+* Added non-null constraints through model metadata for all official user
+  fields.
+* Added a unique email rule on the user model.
+* Added reasonable string lengths for email, password hash, and full name.
+* Added `src/vault/models.py` as the shared model metadata import point for
+  Alembic and future model registration.
+* Updated `alembic/env.py` so `target_metadata` uses Vault model metadata.
+* Added `alembic/versions/0002_create_users.py`.
+* Kept the existing empty baseline migration unchanged.
+* The create-users migration creates only the `users` table.
+* The create-users migration downgrade drops only the `users` table.
+* Added tests for user table name, expected columns, column lengths,
+  non-nullability, email uniqueness, and metadata registration.
+* Updated Alembic tests for the expected baseline plus create-users revision
+  files.
+* Added tests confirming the create-users migration creates only the users table
+  and downgrades only the users table.
+* Added a practical Alembic metadata test confirming `target_metadata` includes
+  the `users` table.
+* Did not add password hashing, registration, login, JWT/session behavior,
+  current-user dependencies, organizations, memberships, RBAC, uploads,
+  reviews, audit logs, exports, sample outputs, CI, or local databases.
+
+Files created or edited:
+
+```text
+src/vault/auth/__init__.py
+src/vault/auth/models.py
+src/vault/models.py
+alembic/env.py
+alembic/versions/0002_create_users.py
+tests/test_user_model.py
+tests/test_alembic_config.py
+docs/Project_State.md
+```
+
+Commands run:
+
+```bash
+python -m pip install -e ".[dev]"
+python -m ruff check .
+python -m mypy src scripts tests
+python -m pytest
+python -m bandit -r src
+python -m pip_audit
+python scripts/run_vault.py --help
+python -m alembic history
+docker --version
+git status --short
+```
+
+Validation results:
+
+```text
+python -m ruff check .
+All checks passed.
+
+python -m mypy src scripts tests
+Success: no issues found in 20 source files.
+
+python -m pytest
+30 passed.
+
+python -m bandit -r src
+No issues identified.
+
+python -m pip_audit
+Did not complete in this environment. pip-audit was installed and run, but
+failed while trying to resolve pypi.org due to DNS/network access. No project
+vulnerability result was produced.
+
+python scripts/run_vault.py --help
+Passed. Help text displayed.
+
+python -m alembic history
+Passed. Alembic history shows 0001_baseline followed by 0002_create_users
+(head).
+
+docker --version
+Docker is not installed in this environment, so the optional Docker-backed
+migration smoke check was skipped.
+
+git status --short
+Did not complete in this environment because the uploaded repo zip did not
+include `.git` metadata.
+```
+
+Validation note:
+
+```text
+Step 5 is complete in the uploaded runtime with the documented limitations. The
+offline code validation suite passed. pip-audit could not complete because this
+runtime could not resolve pypi.org. Docker-backed migration checks were skipped
+because Docker is not installed. git status could not run because the uploaded
+zip does not include .git metadata.
+```
+
+Definition of done:
+
+* Shared SQLAlchemy model metadata import exists.
+* Alembic target metadata points at Vault model metadata.
+* `User` ORM model exists.
+* `users` table metadata matches the official Project State fields.
+* User email has a uniqueness rule.
+* No raw-password storage behavior is added.
+* A create-users Alembic migration exists.
+* The migration creates only the `users` table.
+* The migration downgrade drops only the `users` table.
+* Tests cover model structure and migration presence.
+* Existing tests pass.
+* Ruff passes.
+* Mypy passes.
+* Pytest passes.
+* Bandit passes.
+* pip-audit was run and the DNS/network limitation is documented.
+* CLI help works.
+* Project State is updated.
+* No generated private/local files are included.
+
+Suggested commit message:
+
+```text
+Add user model and migration
 ```
 
 ---

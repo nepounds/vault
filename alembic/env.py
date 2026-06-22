@@ -10,7 +10,7 @@ from sqlalchemy.engine import Connection
 
 from alembic import context
 from vault.config import load_settings
-from vault.database import Base
+from vault.models import Base
 
 target_metadata = Base.metadata
 
