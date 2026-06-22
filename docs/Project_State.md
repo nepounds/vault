@@ -37,23 +37,25 @@ Project-control rule:
 
 ## Current status
 
-Current step: Step 5 — Core database model base and user model.
+Current step: Step 6 — Password hashing and user creation service.
 
 Status: Complete with documented environment limitations.
 
-Approximate project completion: 19%.
+Approximate project completion: 22%.
 
 Current summary:
 
 * Vault has an initial `src/` Python package layout.
 * Tooling is configured in `pyproject.toml` for pytest, Ruff, and mypy.
-* Runtime dependencies include FastAPI, SQLAlchemy, psycopg, and Alembic.
+* Runtime dependencies include FastAPI, SQLAlchemy, psycopg, Alembic, and
+  argon2-cffi.
 * Development dependencies include httpx for FastAPI test-client support.
 * The package exposes a simple string version constant.
 * A typed settings helper exists in `src/vault/config.py`.
 * Settings include app name, environment, database URL, and upload directory.
 * Settings have safe local defaults and do not require real secrets to import.
-* A base `VaultError` exists in `src/vault/exceptions.py`.
+* Custom Vault exceptions exist for base project errors, validation failures,
+  and duplicate user creation attempts.
 * A minimal FastAPI app factory exists at `src/vault/api/main.py`.
 * The app is configured with the Vault title, honest description, and package
   version.
@@ -83,13 +85,29 @@ Current summary:
 * User IDs use UUID primary keys.
 * `created_at` uses a UTC-aware application-side timestamp default.
 * User email is non-null and unique.
-* Password hashing behavior is not implemented yet; only the future
-  `password_hash` storage field exists.
-* Alembic `target_metadata` now points at Vault model metadata that includes
+* `src/vault/auth/passwords.py` provides typed password hashing and password
+  verification helpers.
+* Password hashing uses Argon2 through `argon2-cffi`.
+* Password hashes are salted, and hashing the same raw password twice produces
+  different hashes.
+* Password verification succeeds for the original password and fails for a wrong
+  password.
+* `src/vault/auth/service.py` provides a typed user creation service.
+* The user creation service accepts a SQLAlchemy `Session`, email, raw password,
+  and full name.
+* User creation trims and lowercases emails before storage.
+* User creation rejects blank email, blank password, and blank full-name values.
+* User creation stores password hashes only, never raw passwords.
+* New users are active by default.
+* User creation adds the user to the provided session and flushes, but does not
+  commit.
+* Duplicate normalized user emails are rejected with a custom exception.
+* Alembic `target_metadata` points at Vault model metadata that includes
   the `users` table.
 * A create-users migration exists at
   `alembic/versions/0002_create_users.py`.
-* The create-users migration creates only the `users` table and its email uniqueness rule.
+* The create-users migration creates only the `users` table and its email
+  uniqueness rule.
 * The create-users migration downgrade drops only the users table and its email
   index.
 * Tests cover package import, CLI help, app creation, health response, OpenAPI
@@ -97,26 +115,28 @@ Current summary:
   creation, settings-based engine creation, session factory creation, Alembic
   file presence, baseline revision structure, baseline no-op behavior,
   create-users migration structure, Alembic model metadata import behavior,
-  user table name, user columns, non-null user columns, email uniqueness, and
-  model metadata registration.
-* No registration route, login route, password hashing service, JWT/session
-  handling, organizations, memberships, RBAC, uploads, reviews, audit logs,
+  user table name, user columns, non-null user columns, email uniqueness, model
+  metadata registration, password hashing behavior, password verification
+  behavior, user creation, email normalization, password-hash storage, blank
+  input rejection, and duplicate normalized email rejection.
+* No registration route, login route, JWT/session handling, current-user
+  dependency, organizations, memberships, RBAC, uploads, reviews, audit logs,
   exports, CI files, sample outputs, local databases, or application container
   were added.
 
 Current validation status:
 
 ```text
+python -m pip install -e ".[dev]" PASS
 python -m ruff check .           PASS
 python -m mypy src scripts tests PASS
-python -m pytest                 PASS, 30 passed
+python -m pytest                 PASS, 44 passed
 python -m bandit -r src          PASS, no issues identified
 python -m pip_audit              DID NOT COMPLETE in this environment because
                                  pypi.org DNS resolution failed
 python scripts/run_vault.py --help PASS
 python -m alembic history        PASS
-docker compose up -d db          SKIPPED in this environment because Docker is
-                                 not installed
+docker --version                 Docker is not installed in this environment
 Docker-backed migration checks    SKIPPED in this environment because Docker is
                                  not installed
 git status                       DID NOT COMPLETE in this environment because
@@ -142,7 +162,7 @@ Validation rule:
 Next planned step:
 
 ```text
-Step 6 — Password hashing and user creation service.
+Step 7 — Registration API route.
 ```
 
 ## Project name
@@ -2211,6 +2231,160 @@ Add user model and migration
 ```
 
 ---
+
+
+### Step 6 — Password hashing and user creation service
+
+Status: Complete with documented environment limitations.
+
+Goal:
+
+* Add secure password hashing helpers and a user creation service that creates
+  `User` records with normalized email addresses and hashed passwords, without
+  adding API routes yet.
+
+Completed work:
+
+* Added `argon2-cffi` as a minimal runtime dependency for modern application
+  password hashing.
+* Added `src/vault/auth/passwords.py`.
+* Added typed `hash_password()` helper.
+* Added typed `verify_password()` helper.
+* Password hashes do not equal raw passwords.
+* Hashing the same password twice produces different hashes because Argon2 uses
+  salts.
+* Password verification returns true for the original password and false for a
+  wrong password.
+* Added `src/vault/auth/service.py`.
+* Added typed `create_user()` service function.
+* The user creation service accepts a SQLAlchemy `Session`, email, raw password,
+  and full name.
+* User emails are normalized by trimming surrounding whitespace and lowercasing
+  before storage.
+* Blank email values are rejected.
+* Blank password values are rejected.
+* Blank full-name values are rejected.
+* New users are created with `is_active` set to true.
+* Raw passwords are never stored or returned by the service.
+* The service stores only password hashes in the `User.password_hash` field.
+* The service adds the user to the supplied session and flushes, but does not
+  commit.
+* Duplicate normalized email creation is rejected with `DuplicateUserError`.
+* Added `ValidationError` and `DuplicateUserError` in `src/vault/exceptions.py`.
+* Added `tests/test_passwords.py`.
+* Added `tests/test_user_service.py`.
+* Service tests use an in-memory SQLite database only for isolated unit tests.
+* No database migrations were added because the `users` table did not change.
+* Did not add registration routes, login routes, JWT/session behavior,
+  current-user dependencies, password reset, email verification, organizations,
+  memberships, RBAC, uploads, reviews, audit logs, exports, sample outputs, CI,
+  or local databases.
+
+Files created or edited:
+
+```text
+pyproject.toml
+src/vault/auth/models.py
+src/vault/auth/passwords.py
+src/vault/auth/service.py
+src/vault/exceptions.py
+tests/test_passwords.py
+tests/test_user_service.py
+docs/Project_State.md
+```
+
+Commands run:
+
+```bash
+python -m pip install -e ".[dev]"
+python -m ruff check .
+python -m mypy src scripts tests
+python -m pytest
+python -m bandit -r src
+python -m pip_audit
+python scripts/run_vault.py --help
+python -m alembic history
+docker --version
+git status --short
+```
+
+Validation results:
+
+```text
+python -m pip install -e ".[dev]"
+Passed. Editable install completed with runtime and development dependencies.
+
+python -m ruff check .
+All checks passed.
+
+python -m mypy src scripts tests
+Success: no issues found in 24 source files.
+
+python -m pytest
+44 passed.
+
+python -m bandit -r src
+No issues identified.
+
+python -m pip_audit
+Did not complete in this environment. pip-audit was installed and run, but
+failed while trying to resolve pypi.org due to DNS/network access. No project
+vulnerability result was produced.
+
+python scripts/run_vault.py --help
+Passed. Help text displayed.
+
+python -m alembic history
+Passed. Alembic history shows 0001_baseline followed by 0002_create_users
+(head). No Step 6 migration was added.
+
+docker --version
+Docker is not installed in this environment, so the optional Docker-backed
+migration smoke check was skipped.
+
+git status --short
+Did not complete in this environment because the uploaded repo zip did not
+include `.git` metadata.
+```
+
+Validation note:
+
+```text
+Step 6 is complete in the uploaded runtime with the documented limitations. The
+offline code validation suite passed. pip-audit could not complete because this
+runtime could not resolve pypi.org. Docker-backed migration checks were skipped
+because Docker is not installed. git status could not run because the uploaded
+zip does not include .git metadata.
+```
+
+Definition of done:
+
+* Password hashing helper exists.
+* Password verification helper exists.
+* Password hashes are salted.
+* User creation service exists.
+* User creation normalizes email.
+* User creation rejects blank required inputs.
+* User creation stores password hashes only.
+* No raw-password storage behavior is added.
+* No auth routes are added yet.
+* No token/session behavior is added yet.
+* Tests cover password hashing and user creation service behavior.
+* Existing tests pass.
+* Ruff passes.
+* Mypy passes.
+* Pytest passes.
+* Bandit passes.
+* pip-audit was run and the DNS/network limitation is documented.
+* CLI help works.
+* Project State is updated.
+* No generated private/local files are included.
+
+Suggested commit message:
+
+```text
+Add password hashing and user creation service
+```
 
 ## Portfolio readiness checklist
 

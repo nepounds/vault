@@ -20,8 +20,8 @@ def utc_now() -> datetime:
 class User(Base):
     """A Vault user account.
 
-    Passwords are never stored directly. The password_hash value is reserved
-    for a future password hashing service.
+    Passwords are never stored directly. Only password hashes belong in
+    the password_hash field.
     """
 
     __tablename__ = "users"

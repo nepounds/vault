@@ -10,6 +10,7 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "alembic",
+    "argon2-cffi",
     "fastapi",
     "psycopg",
     "sqlalchemy",
