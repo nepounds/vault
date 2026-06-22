@@ -37,32 +37,41 @@ Project-control rule:
 
 ## Current status
 
-Current step: Step 1 — Project skeleton and tooling baseline.
+Current step: Step 2 — FastAPI app shell.
 
 Status: Complete with local environment limitations documented.
 
-Approximate project completion: 5%.
+Approximate project completion: 8%.
 
 Current summary:
 
-* Vault now has an initial `src/` Python package layout.
+* Vault has an initial `src/` Python package layout.
 * Tooling is configured in `pyproject.toml` for pytest, Ruff, and mypy.
-* Development tooling dependencies are declared for pytest, Ruff, mypy,
-  Bandit, and pip-audit.
+* Runtime dependencies now include FastAPI.
+* Development dependencies now include httpx for FastAPI test-client support.
 * The package exposes a simple string version constant.
 * A small typed settings helper exists in `src/vault/config.py`.
 * A base `VaultError` exists in `src/vault/exceptions.py`.
+* A minimal FastAPI app factory exists at `src/vault/api/main.py`.
+* The app is configured with the Vault title, honest description, and package
+  version.
+* A thin health route module exposes `GET /health`.
+* `GET /health` returns `{"status": "ok", "service": "vault"}`.
+* The OpenAPI schema is reachable at `/openapi.json`.
+* A placeholder `api/dependencies.py` exists for later route dependencies.
 * A thin CLI shell exists at `scripts/run_vault.py` and supports `--help`.
-* The first smoke tests pass.
-* No app features, database connections, uploads, auth, audit logs, exports,
-  Docker files, CI files, sample outputs, or local databases were added.
+* Tests cover package import, CLI help, app creation, health response, and
+  OpenAPI schema access.
+* No database connections, auth, organizations, uploads, reviews, audit logs,
+  exports, Docker files, CI files, sample outputs, or local databases were
+  added.
 
 Current validation status:
 
 ```text
 python -m ruff check .          PASS
 python -m mypy src scripts tests PASS
-python -m pytest                PASS, 4 passed
+python -m pytest                PASS, 7 passed
 python -m bandit -r src         PASS, no issues identified
 python -m pip_audit             NOT COMPLETED: DNS/network failure while
                                 querying pypi.org from this environment
@@ -89,7 +98,7 @@ Validation rule:
 Next planned step:
 
 ```text
-Step 2 — FastAPI app shell.
+Step 3 — Database configuration and Docker Compose baseline.
 ```
 
 ---
@@ -1603,6 +1612,122 @@ Suggested commit message:
 
 ```text
 Add project skeleton and tooling baseline
+```
+
+---
+
+### Step 2 — FastAPI app shell
+
+Status: Complete with documented environment limitations.
+
+Goal:
+
+* Add a minimal FastAPI application shell with a health endpoint and tests,
+  while keeping the app ready for later route modules.
+
+Completed work:
+
+* Added FastAPI as a runtime dependency in `pyproject.toml`.
+* Added httpx as a development dependency for FastAPI test-client support.
+* Added `src/vault/api/__init__.py`.
+* Added `src/vault/api/main.py` with a typed `create_app()` function.
+* Configured the FastAPI app with title `Vault`, package version, and an
+  honest description of the current app shell.
+* Added `src/vault/api/dependencies.py` as a minimal placeholder module.
+* Added `src/vault/api/routes/__init__.py`.
+* Added `src/vault/api/routes/health.py` with a thin health route module.
+* Added a typed Pydantic `HealthResponse` model.
+* Added `GET /health` returning `{"status": "ok", "service": "vault"}`.
+* Confirmed `/openapi.json` is reachable through the test client.
+* Added `tests/test_api_health.py` for app creation, health response, and
+  OpenAPI schema tests.
+* Kept the CLI shell thin and confirmed `scripts/run_vault.py --help` still
+  works.
+* Did not add database, authentication, organizations, uploads, reviews, audit
+  logging, exports, Docker, Alembic, CI, sample outputs, or local databases.
+
+Files created or edited:
+
+```text
+pyproject.toml
+src/vault/api/__init__.py
+src/vault/api/main.py
+src/vault/api/dependencies.py
+src/vault/api/routes/__init__.py
+src/vault/api/routes/health.py
+tests/test_api_health.py
+docs/Project_State.md
+```
+
+Commands run:
+
+```bash
+python -m pip install -e ".[dev]"
+python -m ruff check .
+python -m mypy src scripts tests
+python -m pytest
+python -m bandit -r src
+python -m pip_audit
+python scripts/run_vault.py --help
+git status --short
+```
+
+Validation results:
+
+```text
+python -m ruff check .
+All checks passed.
+
+python -m mypy src scripts tests
+Success: no issues found in 12 source files.
+
+python -m pytest
+7 passed.
+
+python -m bandit -r src
+No issues identified.
+
+python -m pip_audit
+Did not complete in this environment. pip-audit was installed and run, but
+failed while trying to resolve pypi.org due to DNS/network access. No project
+vulnerability result was produced.
+
+python scripts/run_vault.py --help
+Passed. Help text displayed.
+
+git status --short
+Did not complete in this environment because the uploaded repo zip did not
+include `.git` metadata.
+```
+
+Validation note:
+
+```text
+The code validation checks that can run offline all passed. The pip-audit and
+git status limitations are environment issues from this uploaded zip/runtime,
+not implemented project behavior.
+```
+
+Definition of done:
+
+* `create_app()` exists and returns a FastAPI app.
+* `GET /health` works.
+* `/openapi.json` works.
+* The app imports without requiring a database.
+* Tests cover the app shell and health endpoint.
+* Existing tests still pass.
+* Ruff passes.
+* Mypy passes.
+* Pytest passes.
+* Bandit passes.
+* pip-audit was run and the DNS/network limitation is documented.
+* CLI help works.
+* Project State is updated.
+
+Suggested commit message:
+
+```text
+Add FastAPI app shell
 ```
 
 ---
