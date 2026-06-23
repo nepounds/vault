@@ -13,6 +13,7 @@ ALEMBIC_DIR = Path("alembic")
 VERSIONS_DIR = ALEMBIC_DIR / "versions"
 BASELINE_NAME = "0001_baseline.py"
 CREATE_USERS_NAME = "0002_create_users.py"
+CREATE_ORGS_NAME = "0003_orgs_memberships.py"
 
 
 def test_alembic_ini_exists() -> None:
@@ -33,6 +34,7 @@ def test_expected_revision_files_exist() -> None:
     assert [revision.name for revision in revision_files] == [
         BASELINE_NAME,
         CREATE_USERS_NAME,
+        CREATE_ORGS_NAME,
     ]
 
 
@@ -92,7 +94,52 @@ def test_create_users_revision_drops_only_users_table() -> None:
     assert not any(_call_name(call) == "op.create_table" for call in downgrade_calls)
 
 
-def test_alembic_target_metadata_includes_users_table(
+
+
+def test_create_organizations_revision_metadata() -> None:
+    create_orgs = _load_module(VERSIONS_DIR / CREATE_ORGS_NAME)
+
+    assert create_orgs.revision == "0003_orgs_memberships"
+    assert create_orgs.down_revision == "0002_create_users"
+
+
+def test_create_organizations_revision_creates_only_org_tables() -> None:
+    tree = ast.parse(
+        (VERSIONS_DIR / CREATE_ORGS_NAME).read_text(encoding="utf-8"),
+    )
+    upgrade_calls = _function_calls(tree, "upgrade")
+
+    create_table_calls = [
+        call
+        for call in upgrade_calls
+        if _call_name(call) == "op.create_table"
+    ]
+    created_tables = [_first_string_arg(call) for call in create_table_calls]
+
+    assert created_tables == ["organizations", "memberships"]
+    assert not any(_call_name(call) == "op.drop_table" for call in upgrade_calls)
+
+
+def test_create_organizations_revision_drops_only_org_tables() -> None:
+    tree = ast.parse(
+        (VERSIONS_DIR / CREATE_ORGS_NAME).read_text(encoding="utf-8"),
+    )
+    downgrade_calls = _function_calls(tree, "downgrade")
+
+    drop_table_calls = [
+        call
+        for call in downgrade_calls
+        if _call_name(call) == "op.drop_table"
+    ]
+    dropped_tables = [_first_string_arg(call) for call in drop_table_calls]
+
+    assert dropped_tables == ["memberships", "organizations"]
+    assert not any(
+        _call_name(call) == "op.create_table" for call in downgrade_calls
+    )
+
+
+def test_alembic_target_metadata_includes_current_tables(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv("VAULT_DATABASE_URL", raising=False)
@@ -100,6 +147,8 @@ def test_alembic_target_metadata_includes_users_table(
     env = _load_module(ALEMBIC_DIR / "env.py")
 
     assert "users" in env.target_metadata.tables
+    assert "organizations" in env.target_metadata.tables
+    assert "memberships" in env.target_metadata.tables
 
 def test_alembic_env_import_does_not_require_database_connection(
     monkeypatch: pytest.MonkeyPatch,

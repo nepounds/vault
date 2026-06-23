@@ -37,11 +37,11 @@ Project-control rule:
 
 ## Current status
 
-Current step: Step 9 — Current-user dependency and protected route foundation.
+Current step: Step 10 — Organization model and membership model.
 
 Status: Complete with documented environment limitations.
 
-Approximate project completion: 35%.
+Approximate project completion: 39%.
 
 Current summary:
 
@@ -140,11 +140,35 @@ Current summary:
 * Login responses do not include raw passwords or password hashes.
 * Blank login request fields are rejected as client validation errors.
 * Registration behavior from Step 7 remains intact.
-* Alembic `target_metadata` points at Vault model metadata that includes
-  the `users` table.
+* `src/vault/organizations/roles.py` defines the official membership roles:
+  `owner`, `reviewer`, and `viewer`.
+* `src/vault/organizations/models.py` defines the initial `Organization` ORM
+  model.
+* The `Organization` model includes `id`, `name`, `created_by_user_id`, and
+  `created_at`.
+* `src/vault/organizations/models.py` defines the initial `Membership` ORM
+  model.
+* The `Membership` model includes `id`, `organization_id`, `user_id`, `role`,
+  and `created_at`.
+* Organization and membership IDs use UUID primary keys.
+* Organization and membership timestamps use the same UTC-aware application-side
+  timestamp default as the user model.
+* Organizations are connected to their creator through a foreign key to
+  `users.id`.
+* Memberships are connected to organizations and users through foreign keys.
+* Membership metadata prevents the same user from having duplicate memberships
+  in the same organization.
+* Membership role metadata includes a check constraint for `owner`, `reviewer`,
+  and `viewer`.
+* Membership lookup indexes exist for organization and user lookup.
+* Alembic `target_metadata` points at Vault model metadata that includes the
+  `users`, `organizations`, and `memberships` tables.
 * A create-users migration exists at
   `alembic/versions/0002_create_users.py`.
-* No organizations, memberships, RBAC, organization-scoped data access,
+* A create-organizations-and-memberships migration exists at
+  `alembic/versions/0003_orgs_memberships.py`.
+* No organization API routes, organization service layer, membership service
+  layer, RBAC enforcement, organization-scoped data access enforcement,
   document uploads, document metadata, reviews, audit logs, exports, refresh
   tokens, password reset, email verification, CI files, sample outputs, local
   databases, or application container were added.
@@ -153,8 +177,8 @@ Current validation status:
 
 ```text
 python -m ruff check .           PASS
-python -m mypy src scripts tests PASS, 33 source files checked
-python -m pytest                 PASS, 97 passed
+python -m mypy src scripts tests PASS, 37 source files checked
+python -m pytest                 PASS, 117 passed
 python -m bandit -r src          PASS, no issues identified
 python -m pip_audit              DID NOT COMPLETE in this environment because
                                  pypi.org DNS resolution failed
@@ -186,7 +210,7 @@ Validation rule:
 Next planned step:
 
 ```text
-Step 10 — Organization model and membership model.
+Step 11 — Organization creation service.
 ```
 
 ## Project name
@@ -2922,6 +2946,170 @@ Suggested commit message:
 
 ```text
 Add current-user dependency
+```
+
+---
+
+### Step 10 — Organization model and membership model
+
+Status: Complete with documented environment limitations.
+
+Goal:
+
+* Add initial organization and membership SQLAlchemy models, official role
+  values, and one Alembic migration that creates the organization tables.
+
+Completed work:
+
+* Added `src/vault/organizations/__init__.py`.
+* Added `src/vault/organizations/roles.py`.
+* Defined official membership role values as `owner`, `reviewer`, and `viewer`.
+* Added `src/vault/organizations/models.py`.
+* Added a typed SQLAlchemy 2-style `Organization` ORM model.
+* Added the official organization fields: `id`, `name`,
+  `created_by_user_id`, and `created_at`.
+* Added a typed SQLAlchemy 2-style `Membership` ORM model.
+* Added the official membership fields: `id`, `organization_id`, `user_id`,
+  `role`, and `created_at`.
+* Used UUID primary keys for organizations and memberships.
+* Used the existing UTC-aware timestamp helper for organization and membership
+  `created_at` defaults.
+* Added non-null constraints for all official organization and membership
+  fields.
+* Added reasonable string lengths for organization names and membership roles.
+* Added a foreign key from `organizations.created_by_user_id` to `users.id`.
+* Added a foreign key from `memberships.organization_id` to
+  `organizations.id`.
+* Added a foreign key from `memberships.user_id` to `users.id`.
+* Added a uniqueness rule preventing duplicate memberships for the same user in
+  the same organization.
+* Added membership lookup indexes for organization ID and user ID.
+* Added a membership role check constraint for `owner`, `reviewer`, and
+  `viewer`.
+* Updated `src/vault/models.py` so shared model metadata imports `User`,
+  `Organization`, and `Membership`.
+* Confirmed Alembic target metadata includes `users`, `organizations`, and
+  `memberships`.
+* Added `alembic/versions/0003_orgs_memberships.py`.
+* The new migration creates only the `organizations` and `memberships` tables.
+* The migration downgrade drops only `memberships` and `organizations`, with
+  the child table dropped before the parent table.
+* Added `tests/test_organization_models.py`.
+* Updated Alembic tests to expect the new migration file.
+* Added tests for organization columns, membership columns, non-nullability,
+  UUID-style IDs, role values, role constraint metadata, foreign keys, duplicate
+  membership uniqueness, metadata registration, and migration behavior.
+* Existing Step 1 through Step 9 tests remain passing.
+* No organization routes, services, RBAC dependency, scoped data enforcement,
+  invitations, document uploads, reviews, audit logging, exports, sample
+  outputs, CI, or local databases were added.
+
+Files created or edited:
+
+```text
+src/vault/organizations/__init__.py
+src/vault/organizations/models.py
+src/vault/organizations/roles.py
+src/vault/models.py
+alembic/versions/0003_orgs_memberships.py
+tests/test_organization_models.py
+tests/test_alembic_config.py
+docs/Project_State.md
+```
+
+Commands run:
+
+```bash
+python -m pip install -e ".[dev]"
+python -m ruff check .
+python -m mypy src scripts tests
+python -m pytest
+python -m bandit -r src
+python -m pip_audit
+python scripts/run_vault.py --help
+python -m alembic history
+docker --version
+git status --short
+```
+
+Validation results:
+
+```text
+python -m ruff check .
+All checks passed.
+
+python -m mypy src scripts tests
+Success: no issues found in 37 source files.
+
+python -m pytest
+117 passed.
+
+python -m bandit -r src
+No issues identified.
+
+python -m pip_audit
+Did not complete in this environment. pip-audit was installed and run, but
+failed while trying to resolve pypi.org due to DNS/network access. No project
+vulnerability result was produced.
+
+python scripts/run_vault.py --help
+Passed. Help text displayed.
+
+python -m alembic history
+Passed. Alembic history shows 0001_baseline, 0002_create_users, and
+0003_orgs_memberships as head.
+
+docker --version
+Docker is not installed in this environment, so the optional Docker-backed
+migration smoke check was skipped.
+
+git status --short
+Did not complete in this environment because the uploaded repo zip did not
+include `.git` metadata.
+```
+
+Validation note:
+
+```text
+Step 10 is complete in the uploaded runtime with the documented limitations.
+The offline code validation suite passed. pip-audit could not complete because
+this runtime could not resolve pypi.org. Docker-backed migration checks were
+skipped because Docker is not installed. git status could not run because the
+uploaded zip does not include .git metadata.
+```
+
+Definition of done:
+
+* `Organization` ORM model exists.
+* `Membership` ORM model exists.
+* Official role values are defined.
+* Organization model matches the Project State fields.
+* Membership model matches the Project State fields.
+* Foreign keys connect organizations and memberships to users correctly.
+* Duplicate user membership in the same organization is prevented by metadata.
+* New models are registered in shared Vault model metadata.
+* Alembic target metadata includes the new tables.
+* A migration creates only organizations and memberships.
+* The migration downgrade drops only memberships and organizations.
+* No organization routes are added yet.
+* No RBAC enforcement is added yet.
+* Tests cover model structure, role values, constraints, metadata, and migration
+  presence.
+* Existing tests still pass.
+* Ruff passes.
+* Mypy passes.
+* Pytest passes.
+* Bandit passes.
+* pip-audit was run and the DNS/network limitation is documented.
+* CLI help works.
+* Alembic history works.
+* Project State is updated.
+* No generated private/local files are included.
+
+Suggested commit message:
+
+```text
+Add organization and membership models
 ```
 
 ---
