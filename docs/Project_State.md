@@ -37,11 +37,11 @@ Project-control rule:
 
 ## Current status
 
-Current step: Step 6 — Password hashing and user creation service.
+Current step: Step 7 — Registration API route.
 
 Status: Complete with documented environment limitations.
 
-Approximate project completion: 22%.
+Approximate project completion: 26%.
 
 Current summary:
 
@@ -62,7 +62,13 @@ Current summary:
 * A thin health route module exposes `GET /health`.
 * `GET /health` returns `{"status": "ok", "service": "vault"}`.
 * The OpenAPI schema is reachable at `/openapi.json`.
-* A placeholder `api/dependencies.py` exists for later route dependencies.
+* `POST /auth/register` exists and returns HTTP 201 on successful user
+  registration.
+* The registration route is included in the FastAPI app factory.
+* `src/vault/api/dependencies.py` provides a database session dependency that
+  yields and safely closes a SQLAlchemy session.
+* The database session dependency creates no global database connection at
+  import time and can be overridden by route tests.
 * A thin CLI shell exists at `scripts/run_vault.py` and supports `--help`.
 * `src/vault/database.py` contains small typed SQLAlchemy helpers for creating
   an engine and session factory without connecting at import time.
@@ -102,6 +108,17 @@ Current summary:
 * User creation adds the user to the provided session and flushes, but does not
   commit.
 * Duplicate normalized user emails are rejected with a custom exception.
+* `src/vault/auth/schemas.py` defines explicit registration request and safe
+  registration response schemas.
+* Registration requests include `email`, `password`, and `full_name`.
+* Registration responses include only `id`, `email`, `full_name`, `is_active`,
+  and `created_at`.
+* Registration responses do not include raw passwords or password hashes.
+* The registration route calls the existing user creation service and does not
+  perform password hashing directly.
+* The registration route commits successful user creation and maps duplicate
+  email errors to HTTP 409.
+* Blank registration request fields are rejected as client validation errors.
 * Alembic `target_metadata` points at Vault model metadata that includes
   the `users` table.
 * A create-users migration exists at
@@ -117,12 +134,14 @@ Current summary:
   create-users migration structure, Alembic model metadata import behavior,
   user table name, user columns, non-null user columns, email uniqueness, model
   metadata registration, password hashing behavior, password verification
-  behavior, user creation, email normalization, password-hash storage, blank
-  input rejection, and duplicate normalized email rejection.
-* No registration route, login route, JWT/session handling, current-user
-  dependency, organizations, memberships, RBAC, uploads, reviews, audit logs,
-  exports, CI files, sample outputs, local databases, or application container
-  were added.
+  behavior, user creation, email normalization, password-hash storage, blank input
+  rejection, duplicate normalized email rejection, registration response safety,
+  registration email normalization, registration password-hash storage,
+  registration blank-input rejection, registration duplicate-email rejection,
+  and registration OpenAPI inclusion.
+* No login route, JWT/session handling, current-user dependency, organizations,
+  memberships, RBAC, uploads, reviews, audit logs, exports, CI files, sample
+  outputs, local databases, or application container were added.
 
 Current validation status:
 
@@ -130,7 +149,7 @@ Current validation status:
 python -m pip install -e ".[dev]" PASS
 python -m ruff check .           PASS
 python -m mypy src scripts tests PASS
-python -m pytest                 PASS, 44 passed
+python -m pytest                 PASS, 55 passed
 python -m bandit -r src          PASS, no issues identified
 python -m pip_audit              DID NOT COMPLETE in this environment because
                                  pypi.org DNS resolution failed
@@ -162,7 +181,7 @@ Validation rule:
 Next planned step:
 
 ```text
-Step 7 — Registration API route.
+Step 8 — Login service and token foundation.
 ```
 
 ## Project name
@@ -2384,6 +2403,168 @@ Suggested commit message:
 
 ```text
 Add password hashing and user creation service
+```
+
+---
+
+### Step 7 — Registration API route
+
+Status: Complete with documented environment limitations.
+
+Goal:
+
+* Add a FastAPI registration endpoint that creates users through the existing
+  user creation service, returns safe user data, and does not expose passwords
+  or password hashes.
+
+Completed work:
+
+* Added `src/vault/auth/schemas.py`.
+* Added `UserRegistrationRequest` with explicit `email`, `password`, and
+  `full_name` fields.
+* Added `UserRegistrationResponse` with safe user fields only.
+* Added blank-string validation for registration request fields.
+* Updated `src/vault/api/dependencies.py` with a typed database session
+  dependency.
+* The database session dependency yields a SQLAlchemy session and closes it
+  safely.
+* The database dependency creates no global connection at import time.
+* Added `src/vault/api/routes/auth.py`.
+* Added `POST /auth/register`.
+* Included the auth router in the FastAPI app factory.
+* Kept the registration route thin.
+* The route calls the existing `create_user()` service.
+* The route does not perform password hashing directly.
+* The route commits successful user creation and refreshes the user before
+  returning the response schema.
+* Duplicate normalized emails return HTTP 409 with a clear client error.
+* Service validation errors return HTTP 400 if they reach the route.
+* Pydantic request validation rejects blank email, password, and full name with
+  HTTP 422 before the service is called.
+* Added `tests/test_auth_registration_api.py`.
+* Route tests override the database dependency.
+* Route tests use an isolated in-memory SQLite database with SQLAlchemy only for
+  API tests.
+* Route tests confirm successful registration returns HTTP 201.
+* Route tests confirm safe response fields only.
+* Route tests confirm raw passwords and password hashes are not returned.
+* Route tests confirm email normalization.
+* Route tests confirm a password hash is stored instead of the raw password.
+* Route tests confirm blank email, blank password, and blank full name are
+  rejected.
+* Route tests confirm duplicate normalized email registration is rejected.
+* Route tests confirm `/openapi.json` includes `/auth/register`.
+* No login route, JWT/session handling, current-user dependency, password reset,
+  email verification, organizations, memberships, RBAC, uploads, reviews, audit
+  logs, exports, sample outputs, CI, local databases, or migration files were
+  added.
+
+Files created or edited:
+
+```text
+src/vault/api/dependencies.py
+src/vault/api/main.py
+src/vault/api/routes/__init__.py
+src/vault/api/routes/auth.py
+src/vault/auth/__init__.py
+src/vault/auth/schemas.py
+tests/test_auth_registration_api.py
+docs/Project_State.md
+```
+
+Commands run:
+
+```bash
+python -m pip install -e ".[dev]"
+python -m ruff check .
+python -m mypy src scripts tests
+python -m pytest
+python -m bandit -r src
+python -m pip_audit
+python scripts/run_vault.py --help
+python -m alembic history
+docker --version
+git status --short
+```
+
+Validation results:
+
+```text
+python -m pip install -e ".[dev]"
+Passed. Editable install completed with runtime and development dependencies.
+The command output was long enough that the container command timed out after
+successful installation, but the installed tools were available afterward.
+
+python -m ruff check .
+All checks passed after import sorting was applied to the new registration API
+route test file.
+
+python -m mypy src scripts tests
+Success: no issues found in 27 source files.
+
+python -m pytest
+55 passed.
+
+python -m bandit -r src
+No issues identified.
+
+python -m pip_audit
+Did not complete in this environment. pip-audit was installed and run, but
+failed while trying to resolve pypi.org due to DNS/network access. No project
+vulnerability result was produced.
+
+python scripts/run_vault.py --help
+Passed. Help text displayed.
+
+python -m alembic history
+Passed. Alembic history shows 0001_baseline followed by 0002_create_users
+(head). No Step 7 migration was added.
+
+docker --version
+Docker is not installed in this environment, so the optional Docker-backed
+migration smoke check was skipped.
+
+git status --short
+Did not complete in this environment because the uploaded repo zip did not
+include `.git` metadata.
+```
+
+Validation note:
+
+```text
+Step 7 is complete in the uploaded runtime with the documented limitations. The
+offline code validation suite passed. pip-audit could not complete because this
+runtime could not resolve pypi.org. Docker-backed migration checks were skipped
+because Docker is not installed. git status could not run because the uploaded
+zip does not include .git metadata.
+```
+
+Definition of done:
+
+* `POST /auth/register` exists.
+* Registration route calls the user creation service.
+* Registration route returns HTTP 201 on success.
+* Registration route returns safe user data only.
+* Registration response does not expose raw passwords.
+* Registration response does not expose password hashes.
+* Registration rejects blank required inputs.
+* Registration rejects duplicate normalized emails.
+* Route tests cover success and failure cases.
+* Existing tests still pass.
+* Ruff passes.
+* Mypy passes.
+* Pytest passes.
+* Bandit passes.
+* pip-audit was run and the DNS/network limitation is documented.
+* CLI help works.
+* Alembic history works.
+* Project State is updated.
+* No generated private/local files are included.
+
+Suggested commit message:
+
+```text
+Add registration API route
 ```
 
 ## Portfolio readiness checklist

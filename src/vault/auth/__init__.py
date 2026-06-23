@@ -1,1 +1,1 @@
-"""Authentication models and helpers for Vault."""
+"""Authentication package for Vault."""
