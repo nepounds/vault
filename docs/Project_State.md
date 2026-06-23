@@ -37,11 +37,11 @@ Project-control rule:
 
 ## Current status
 
-Current step: Step 10 — Organization model and membership model.
+Current step: Step 11 — Organization creation service.
 
 Status: Complete with documented environment limitations.
 
-Approximate project completion: 39%.
+Approximate project completion: 42%.
 
 Current summary:
 
@@ -58,8 +58,8 @@ Current summary:
 * Token defaults are local-development/test defaults only and are not production
   secrets.
 * Custom Vault exceptions exist for base project errors, validation failures,
-  duplicate user creation attempts, authentication failures, and inactive-user
-  authentication attempts.
+  duplicate user creation attempts, authentication failures, inactive-user
+  authentication attempts, and organization validation failures.
 * A minimal FastAPI app factory exists at `src/vault/api/main.py`.
 * The app is configured with the Vault title, honest description, and package
   version.
@@ -167,18 +167,32 @@ Current summary:
   `alembic/versions/0002_create_users.py`.
 * A create-organizations-and-memberships migration exists at
   `alembic/versions/0003_orgs_memberships.py`.
-* No organization API routes, organization service layer, membership service
-  layer, RBAC enforcement, organization-scoped data access enforcement,
-  document uploads, document metadata, reviews, audit logs, exports, refresh
-  tokens, password reset, email verification, CI files, sample outputs, local
-  databases, or application container were added.
+* `src/vault/organizations/service.py` provides typed organization creation
+  service behavior.
+* The organization creation service accepts a SQLAlchemy `Session`, a creator
+  `User` ORM object, and an organization name.
+* Organization creation trims surrounding whitespace from organization names.
+* Blank and whitespace-only organization names are rejected.
+* Inactive creator users are rejected.
+* Organization creation creates an `Organization` record with
+  `created_by_user_id` set to the creator user's ID.
+* Organization creation creates one owner `Membership` record for the creator.
+* The creator membership uses the official `owner` role value.
+* Organization and owner membership records are added to the same supplied
+  session and flushed together so generated IDs are available.
+* Organization creation does not commit automatically.
+* No organization API routes, membership service layer, RBAC enforcement,
+  organization-scoped data access enforcement, document uploads, document
+  metadata, reviews, audit logs, exports, refresh tokens, password reset, email
+  verification, CI files, sample outputs, local databases, or application
+  container were added.
 
 Current validation status:
 
 ```text
 python -m ruff check .           PASS
-python -m mypy src scripts tests PASS, 37 source files checked
-python -m pytest                 PASS, 117 passed
+python -m mypy src scripts tests PASS, 39 source files checked
+python -m pytest                 PASS, 128 passed
 python -m bandit -r src          PASS, no issues identified
 python -m pip_audit              DID NOT COMPLETE in this environment because
                                  pypi.org DNS resolution failed
@@ -210,7 +224,7 @@ Validation rule:
 Next planned step:
 
 ```text
-Step 11 — Organization creation service.
+Step 12 — Organization creation API route.
 ```
 
 ## Project name
@@ -3110,6 +3124,154 @@ Suggested commit message:
 
 ```text
 Add organization and membership models
+```
+
+---
+
+### Step 11 — Organization creation service
+
+Status: Complete with documented environment limitations.
+
+Goal:
+
+* Add an organization creation service that creates an organization and assigns
+  the creator an owner membership in one transaction, without adding API routes
+  yet.
+
+Completed work:
+
+* Added `src/vault/organizations/service.py`.
+* Added `OrganizationCreation` as a small typed service result containing the
+  created organization and owner membership.
+* Added typed `create_organization()` service function.
+* The service accepts a SQLAlchemy `Session`, creator `User` ORM object, and
+  organization name.
+* Organization names are normalized by trimming surrounding whitespace.
+* Blank and whitespace-only organization names are rejected with
+  `OrganizationValidationError`.
+* Inactive creator users are rejected with `OrganizationValidationError`.
+* Organization creation sets `created_by_user_id` to the creator user's ID.
+* Organization creation creates an owner membership for the creator.
+* The owner membership uses the official `MembershipRole.OWNER.value` role
+  value.
+* Organization and membership records are added to the same supplied session.
+* The service flushes so organization and membership IDs are available to the
+  caller.
+* The service does not commit automatically.
+* Added `OrganizationError` and `OrganizationValidationError` in
+  `src/vault/exceptions.py`.
+* Added `tests/test_organization_service.py`.
+* Service tests use an isolated in-memory SQLite database only for unit tests.
+* Tests cover trimmed names, creator user ID, owner membership creation,
+  official owner role value, generated IDs after flush, blank-name rejection,
+  whitespace-only-name rejection, inactive creator rejection, no automatic
+  commit, shared-session behavior, and duplicate membership constraint behavior.
+* Existing Step 1 through Step 10 tests remain passing.
+* No organization API routes, membership API routes, RBAC dependency,
+  organization-scoped data access enforcement, invitations, document uploads,
+  reviews, audit logging, exports, sample outputs, CI, local databases, or
+  migrations were added.
+
+Files created or edited:
+
+```text
+src/vault/organizations/service.py
+src/vault/exceptions.py
+tests/test_organization_service.py
+docs/Project_State.md
+```
+
+Commands run:
+
+```bash
+python -m pip install -e ".[dev]"
+python -m ruff check .
+python -m mypy src scripts tests
+python -m pytest
+python -m bandit -r src
+python -m pip_audit
+python scripts/run_vault.py --help
+python -m alembic history
+docker --version
+git status --short
+```
+
+Validation results:
+
+```text
+python -m ruff check .
+All checks passed.
+
+python -m mypy src scripts tests
+Success: no issues found in 39 source files.
+
+python -m pytest
+128 passed.
+
+python -m bandit -r src
+No issues identified.
+
+python -m pip_audit
+Did not complete in this environment. pip-audit was installed and run, but
+failed while trying to resolve pypi.org due to DNS/network access. No project
+vulnerability result was produced.
+
+python scripts/run_vault.py --help
+Passed. Help text displayed.
+
+python -m alembic history
+Passed. Alembic history shows 0001_baseline, 0002_create_users, and
+0003_orgs_memberships as head. No Step 11 migration was added.
+
+docker --version
+Docker is not installed in this environment, so the optional Docker-backed
+migration smoke check was skipped.
+
+git status --short
+Did not complete in this environment because the uploaded repo zip did not
+include `.git` metadata.
+```
+
+Validation note:
+
+```text
+Step 11 is complete in the uploaded runtime with the documented limitations.
+The offline code validation suite passed. pip-audit could not complete because
+this runtime could not resolve pypi.org. Docker-backed migration checks were
+skipped because Docker is not installed. git status could not run because the
+uploaded zip does not include .git metadata.
+```
+
+Definition of done:
+
+* Organization creation service exists.
+* Service trims organization names.
+* Blank organization names are rejected.
+* Inactive creator users are rejected.
+* Service creates an `Organization`.
+* Service creates an owner `Membership` for the creator.
+* Organization and membership are added in the same session.
+* Service flushes so generated IDs are available.
+* Service does not commit automatically.
+* No organization routes are added yet.
+* No RBAC enforcement is added yet.
+* No migrations are added in this step.
+* Tests cover organization creation service behavior.
+* Existing tests still pass.
+* Ruff passes.
+* Mypy passes.
+* Pytest passes.
+* Bandit passes.
+* pip-audit was run and the DNS/network limitation is documented.
+* CLI help works.
+* Alembic history works.
+* Project State is updated.
+* No generated private/local files are included.
+
+Suggested commit message:
+
+```text
+Add organization creation service
 ```
 
 ---

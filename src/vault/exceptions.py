@@ -19,3 +19,11 @@ class AuthenticationError(VaultError):
 
 class InactiveUserError(AuthenticationError):
     """Raised when an inactive user attempts to authenticate."""
+
+
+class OrganizationError(VaultError):
+    """Base exception for organization service errors."""
+
+
+class OrganizationValidationError(OrganizationError):
+    """Raised when organization input fails service validation."""
