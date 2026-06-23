@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from vault.auth.models import User
 from vault.auth.passwords import hash_password, verify_password
+from vault.auth.tokens import decode_access_token
 from vault.exceptions import (
     AuthenticationError,
     DuplicateUserError,
@@ -85,6 +86,23 @@ def authenticate_user(
         is_active=user.is_active,
     )
 
+
+
+def load_active_user_from_token(session: Session, token: str) -> User:
+    """Load the active user identified by a valid access token."""
+    payload = decode_access_token(token)
+    try:
+        user_id = UUID(payload["sub"])
+    except ValueError as exc:
+        raise AuthenticationError("Invalid access token.") from exc
+
+    user = session.get(User, user_id)
+    if user is None:
+        raise AuthenticationError("Invalid access token.")
+    if not user.is_active:
+        raise InactiveUserError("Inactive users cannot authenticate.")
+
+    return user
 
 def _normalize_email(email: str) -> str:
     normalized_email = email.strip().lower()

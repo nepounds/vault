@@ -7,8 +7,10 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from vault.api.dependencies import get_database_session
+from vault.api.dependencies import get_current_user, get_database_session
+from vault.auth.models import User
 from vault.auth.schemas import (
+    CurrentUserResponse,
     UserLoginRequest,
     UserLoginResponse,
     UserRegistrationRequest,
@@ -89,3 +91,15 @@ def login_user(
 
     access_token = create_access_token(user.id)
     return UserLoginResponse(access_token=access_token)
+
+
+@router.get(
+    "/me",
+    response_model=CurrentUserResponse,
+    status_code=status.HTTP_200_OK,
+)
+def read_current_user(
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> CurrentUserResponse:
+    """Return safe data for the authenticated current user."""
+    return CurrentUserResponse.model_validate(current_user)

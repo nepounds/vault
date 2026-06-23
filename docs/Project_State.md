@@ -37,11 +37,11 @@ Project-control rule:
 
 ## Current status
 
-Current step: Step 8 — Login service and token foundation.
+Current step: Step 9 — Current-user dependency and protected route foundation.
 
 Status: Complete with documented environment limitations.
 
-Approximate project completion: 31%.
+Approximate project completion: 35%.
 
 Current summary:
 
@@ -59,7 +59,7 @@ Current summary:
   secrets.
 * Custom Vault exceptions exist for base project errors, validation failures,
   duplicate user creation attempts, authentication failures, and inactive-user
-  login attempts.
+  authentication attempts.
 * A minimal FastAPI app factory exists at `src/vault/api/main.py`.
 * The app is configured with the Vault title, honest description, and package
   version.
@@ -72,12 +72,23 @@ Current summary:
 * Successful login returns a bearer access token.
 * Invalid email/password login attempts return HTTP 401 with a safe public error.
 * Inactive-user login attempts return HTTP 403 with a safe public error.
-* The login route is included through the existing auth router in the FastAPI app
+* `GET /auth/me` exists and returns HTTP 200 for an authenticated active user.
+* `GET /auth/me` returns safe current-user fields only: `id`, `email`,
+  `full_name`, `is_active`, and `created_at`.
+* `GET /auth/me` does not return raw passwords or password hashes.
+* The auth route is included through the existing auth router in the FastAPI app
   factory.
 * `src/vault/api/dependencies.py` provides a database session dependency that
   yields and safely closes a SQLAlchemy session.
 * The database session dependency creates no global database connection at
   import time and can be overridden by route tests.
+* `src/vault/api/dependencies.py` provides a reusable current-user dependency.
+* The current-user dependency uses FastAPI HTTP bearer security utilities.
+* The current-user dependency rejects missing, malformed, invalid, expired,
+  unknown-user, and inactive-user bearer tokens with a safe public HTTP 401
+  error.
+* `src/vault/auth/service.py` includes a small token-to-active-user lookup
+  helper for dependency use.
 * A thin CLI shell exists at `scripts/run_vault.py` and supports `--help`.
 * `src/vault/database.py` contains small typed SQLAlchemy helpers for creating
   an engine and session factory without connecting at import time.
@@ -101,7 +112,8 @@ Current summary:
 * `src/vault/auth/passwords.py` provides typed password hashing and password
   verification helpers.
 * Password hashing uses Argon2 through `argon2-cffi`.
-* `src/vault/auth/service.py` provides typed user creation and login services.
+* `src/vault/auth/service.py` provides typed user creation, login, and
+  token-based active-user loading services.
 * The user creation service accepts a SQLAlchemy `Session`, email, raw password,
   and full name.
 * User creation trims and lowercases emails before storage.
@@ -121,8 +133,8 @@ Current summary:
   an `exp` expiration claim.
 * Token decoding validates structure, signature, algorithm, token type, subject,
   and expiration.
-* `src/vault/auth/schemas.py` defines explicit registration and login request
-  and response schemas.
+* `src/vault/auth/schemas.py` defines explicit registration, login, and
+  current-user response schemas.
 * Login requests include `email` and `password`.
 * Login responses include only `access_token` and `token_type`.
 * Login responses do not include raw passwords or password hashes.
@@ -132,17 +144,17 @@ Current summary:
   the `users` table.
 * A create-users migration exists at
   `alembic/versions/0002_create_users.py`.
-* No current-user dependency, protected routes, refresh tokens, password reset,
-  email verification, organizations, memberships, RBAC, uploads, reviews, audit
-  logs, exports, CI files, sample outputs, local databases, or application
-  container were added.
+* No organizations, memberships, RBAC, organization-scoped data access,
+  document uploads, document metadata, reviews, audit logs, exports, refresh
+  tokens, password reset, email verification, CI files, sample outputs, local
+  databases, or application container were added.
 
 Current validation status:
 
 ```text
 python -m ruff check .           PASS
-python -m mypy src scripts tests PASS, 31 source files checked
-python -m pytest                 PASS, 79 passed
+python -m mypy src scripts tests PASS, 33 source files checked
+python -m pytest                 PASS, 97 passed
 python -m bandit -r src          PASS, no issues identified
 python -m pip_audit              DID NOT COMPLETE in this environment because
                                  pypi.org DNS resolution failed
@@ -174,7 +186,7 @@ Validation rule:
 Next planned step:
 
 ```text
-Step 9 — Current-user dependency and protected route foundation.
+Step 10 — Organization model and membership model.
 ```
 
 ## Project name
@@ -2738,6 +2750,178 @@ Suggested commit message:
 
 ```text
 Add login and token foundation
+```
+
+---
+
+### Step 9 — Current-user dependency and protected route foundation
+
+Status: Complete with documented environment limitations.
+
+Goal:
+
+* Add a reusable current-user dependency that validates bearer tokens, loads the
+  active user from the database, and exposes one protected route proving
+  authenticated request handling works.
+
+Completed work:
+
+* Added a reusable `get_current_user()` dependency in
+  `src/vault/api/dependencies.py`.
+* The current-user dependency uses FastAPI `HTTPBearer` security utilities with
+  controlled public error handling.
+* The current-user dependency reads bearer credentials from the `Authorization`
+  header.
+* Missing bearer tokens are rejected.
+* Malformed authorization headers are rejected.
+* Invalid access tokens are rejected.
+* Expired access tokens are rejected.
+* Tokens for unknown users are rejected.
+* Tokens for inactive users are rejected.
+* Current-user API auth failures return a safe generic HTTP 401 response with a
+  `WWW-Authenticate: Bearer` header.
+* Added `load_active_user_from_token()` in `src/vault/auth/service.py`.
+* The token-to-user helper decodes the existing access token format.
+* The token-to-user helper extracts the token subject and parses it as a UUID.
+* The token-to-user helper loads the matching `User` from the supplied database
+  session.
+* The token-to-user helper requires the user to exist and be active.
+* Added `CurrentUserResponse` in `src/vault/auth/schemas.py`.
+* Added `GET /auth/me`.
+* Kept the protected route thin.
+* `GET /auth/me` depends on the current-user dependency.
+* `GET /auth/me` returns `id`, `email`, `full_name`, `is_active`, and
+  `created_at`.
+* `GET /auth/me` does not return raw passwords.
+* `GET /auth/me` does not return password hashes.
+* Updated the FastAPI app description to include current-user lookup as current
+  implemented behavior.
+* Added `tests/test_current_user_dependency.py`.
+* Added `tests/test_auth_me_api.py`.
+* Dependency tests cover missing credentials, malformed credentials, invalid
+  tokens, expired tokens, unknown-user tokens, inactive-user tokens, and valid
+  active-user resolution.
+* API tests cover missing token, malformed authorization header, invalid token,
+  expired token, valid token, safe response fields, password exclusion,
+  password-hash exclusion, unknown-user token rejection, inactive-user token
+  rejection, and OpenAPI inclusion.
+* Existing Step 1 through Step 8 tests remain passing.
+* No database migrations were added because the `users` table did not change.
+* No organizations, memberships, role-based authorization, organization-scoped
+  data access, document uploads, document metadata, reviews, audit logs,
+  exports, refresh tokens, password reset, email verification, sample outputs,
+  CI, local databases, or application container were added.
+
+Files created or edited:
+
+```text
+src/vault/api/dependencies.py
+src/vault/api/main.py
+src/vault/api/routes/auth.py
+src/vault/auth/schemas.py
+src/vault/auth/service.py
+tests/test_current_user_dependency.py
+tests/test_auth_me_api.py
+docs/Project_State.md
+```
+
+Commands run:
+
+```bash
+python -m pip install -e ".[dev]"
+python -m ruff check .
+python -m mypy src scripts tests
+python -m pytest
+python -m bandit -r src
+python -m pip_audit
+python scripts/run_vault.py --help
+python -m alembic history
+docker --version
+git status --short
+```
+
+Validation results:
+
+```text
+python -m pip install -e ".[dev]"
+Passed far enough to install required runtime and development tools. The output
+was long enough that the first combined install command timed out after package
+installation activity, so missing validation tools were installed directly and
+the validation suite was rerun.
+
+python -m ruff check .
+All checks passed.
+
+python -m mypy src scripts tests
+Success: no issues found in 33 source files.
+
+python -m pytest
+97 passed.
+
+python -m bandit -r src
+No issues identified.
+
+python -m pip_audit
+Did not complete in this environment. pip-audit was installed and run, but
+failed while trying to resolve pypi.org due to DNS/network access. No project
+vulnerability result was produced.
+
+python scripts/run_vault.py --help
+Passed. Help text displayed.
+
+python -m alembic history
+Passed. Alembic history shows 0001_baseline followed by 0002_create_users
+(head). No Step 9 migration was added.
+
+docker --version
+Docker is not installed in this environment, so the optional Docker-backed
+migration smoke check was skipped.
+
+git status --short
+Did not complete in this environment because the uploaded repo zip did not
+include `.git` metadata.
+```
+
+Validation note:
+
+```text
+Step 9 is complete in the uploaded runtime with the documented limitations. The
+offline code validation suite passed. pip-audit could not complete because this
+runtime could not resolve pypi.org. Docker-backed migration checks were skipped
+because Docker is not installed. git status could not run because the uploaded
+zip does not include .git metadata.
+```
+
+Definition of done:
+
+* Current-user dependency exists.
+* Current-user dependency validates bearer access tokens.
+* Current-user dependency loads the active user from the database.
+* Missing tokens are rejected.
+* Invalid tokens are rejected.
+* Expired tokens are rejected.
+* Unknown-user tokens are rejected.
+* Inactive-user tokens are rejected.
+* `GET /auth/me` exists.
+* `GET /auth/me` returns safe current-user data.
+* `GET /auth/me` does not expose raw passwords.
+* `GET /auth/me` does not expose password hashes.
+* Route and dependency tests cover success and failure cases.
+* Existing tests still pass.
+* Ruff passes.
+* Mypy passes.
+* Pytest passes.
+* Bandit passes.
+* pip-audit was run and the DNS/network limitation is documented.
+* CLI help works.
+* Alembic history works.
+* Project State is updated.
+* No generated private/local files are included.
+
+Suggested commit message:
+
+```text
+Add current-user dependency
 ```
 
 ---

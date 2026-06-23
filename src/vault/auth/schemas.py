@@ -56,3 +56,15 @@ class UserLoginResponse(BaseModel):
 
     access_token: str
     token_type: str = "bearer"
+
+
+class CurrentUserResponse(BaseModel):
+    """Safe response body for the authenticated current user."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    email: str
+    full_name: str
+    is_active: bool
+    created_at: datetime
