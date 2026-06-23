@@ -37,11 +37,11 @@ Project-control rule:
 
 ## Current status
 
-Current step: Step 7 — Registration API route.
+Current step: Step 8 — Login service and token foundation.
 
 Status: Complete with documented environment limitations.
 
-Approximate project completion: 26%.
+Approximate project completion: 31%.
 
 Current summary:
 
@@ -52,10 +52,14 @@ Current summary:
 * Development dependencies include httpx for FastAPI test-client support.
 * The package exposes a simple string version constant.
 * A typed settings helper exists in `src/vault/config.py`.
-* Settings include app name, environment, database URL, and upload directory.
+* Settings include app name, environment, database URL, upload directory, token
+  secret key, token algorithm, and access-token expiration minutes.
 * Settings have safe local defaults and do not require real secrets to import.
+* Token defaults are local-development/test defaults only and are not production
+  secrets.
 * Custom Vault exceptions exist for base project errors, validation failures,
-  and duplicate user creation attempts.
+  duplicate user creation attempts, authentication failures, and inactive-user
+  login attempts.
 * A minimal FastAPI app factory exists at `src/vault/api/main.py`.
 * The app is configured with the Vault title, honest description, and package
   version.
@@ -64,7 +68,12 @@ Current summary:
 * The OpenAPI schema is reachable at `/openapi.json`.
 * `POST /auth/register` exists and returns HTTP 201 on successful user
   registration.
-* The registration route is included in the FastAPI app factory.
+* `POST /auth/login` exists and returns HTTP 200 on successful authentication.
+* Successful login returns a bearer access token.
+* Invalid email/password login attempts return HTTP 401 with a safe public error.
+* Inactive-user login attempts return HTTP 403 with a safe public error.
+* The login route is included through the existing auth router in the FastAPI app
+  factory.
 * `src/vault/api/dependencies.py` provides a database session dependency that
   yields and safely closes a SQLAlchemy session.
 * The database session dependency creates no global database connection at
@@ -80,8 +89,6 @@ Current summary:
   `alembic/versions/` exist.
 * One empty baseline migration exists at
   `alembic/versions/0001_baseline.py`.
-* The baseline migration has `down_revision = None` and empty `upgrade()` and
-  `downgrade()` functions.
 * A shared SQLAlchemy model metadata import exists at `src/vault/models.py`.
 * The shared SQLAlchemy declarative base remains in `src/vault/database.py` and
   is re-exported through `src/vault/models.py` with imported models.
@@ -94,62 +101,48 @@ Current summary:
 * `src/vault/auth/passwords.py` provides typed password hashing and password
   verification helpers.
 * Password hashing uses Argon2 through `argon2-cffi`.
-* Password hashes are salted, and hashing the same raw password twice produces
-  different hashes.
-* Password verification succeeds for the original password and fails for a wrong
-  password.
-* `src/vault/auth/service.py` provides a typed user creation service.
+* `src/vault/auth/service.py` provides typed user creation and login services.
 * The user creation service accepts a SQLAlchemy `Session`, email, raw password,
   and full name.
 * User creation trims and lowercases emails before storage.
 * User creation rejects blank email, blank password, and blank full-name values.
 * User creation stores password hashes only, never raw passwords.
-* New users are active by default.
-* User creation adds the user to the provided session and flushes, but does not
-  commit.
-* Duplicate normalized user emails are rejected with a custom exception.
-* `src/vault/auth/schemas.py` defines explicit registration request and safe
-  registration response schemas.
-* Registration requests include `email`, `password`, and `full_name`.
-* Registration responses include only `id`, `email`, `full_name`, `is_active`,
-  and `created_at`.
-* Registration responses do not include raw passwords or password hashes.
-* The registration route calls the existing user creation service and does not
-  perform password hashing directly.
-* The registration route commits successful user creation and maps duplicate
-  email errors to HTTP 409.
-* Blank registration request fields are rejected as client validation errors.
+* The login service accepts a SQLAlchemy `Session`, email, and raw password.
+* The login service normalizes the email before lookup.
+* The login service verifies passwords through password helper functions.
+* The login service rejects invalid credentials without distinguishing unknown
+  email from wrong password.
+* The login service rejects inactive users.
+* The login service returns safe authenticated-user data and does not expose raw
+  passwords or password hashes.
+* `src/vault/auth/tokens.py` provides an isolated minimal JWT-style access-token
+  foundation using the standard library.
+* Access tokens are signed with HS256, include the user ID as `sub`, and include
+  an `exp` expiration claim.
+* Token decoding validates structure, signature, algorithm, token type, subject,
+  and expiration.
+* `src/vault/auth/schemas.py` defines explicit registration and login request
+  and response schemas.
+* Login requests include `email` and `password`.
+* Login responses include only `access_token` and `token_type`.
+* Login responses do not include raw passwords or password hashes.
+* Blank login request fields are rejected as client validation errors.
+* Registration behavior from Step 7 remains intact.
 * Alembic `target_metadata` points at Vault model metadata that includes
   the `users` table.
 * A create-users migration exists at
   `alembic/versions/0002_create_users.py`.
-* The create-users migration creates only the `users` table and its email
-  uniqueness rule.
-* The create-users migration downgrade drops only the users table and its email
-  index.
-* Tests cover package import, CLI help, app creation, health response, OpenAPI
-  schema access, settings defaults, environment database URL loading, engine
-  creation, settings-based engine creation, session factory creation, Alembic
-  file presence, baseline revision structure, baseline no-op behavior,
-  create-users migration structure, Alembic model metadata import behavior,
-  user table name, user columns, non-null user columns, email uniqueness, model
-  metadata registration, password hashing behavior, password verification
-  behavior, user creation, email normalization, password-hash storage, blank input
-  rejection, duplicate normalized email rejection, registration response safety,
-  registration email normalization, registration password-hash storage,
-  registration blank-input rejection, registration duplicate-email rejection,
-  and registration OpenAPI inclusion.
-* No login route, JWT/session handling, current-user dependency, organizations,
-  memberships, RBAC, uploads, reviews, audit logs, exports, CI files, sample
-  outputs, local databases, or application container were added.
+* No current-user dependency, protected routes, refresh tokens, password reset,
+  email verification, organizations, memberships, RBAC, uploads, reviews, audit
+  logs, exports, CI files, sample outputs, local databases, or application
+  container were added.
 
 Current validation status:
 
 ```text
-python -m pip install -e ".[dev]" PASS
 python -m ruff check .           PASS
-python -m mypy src scripts tests PASS
-python -m pytest                 PASS, 55 passed
+python -m mypy src scripts tests PASS, 31 source files checked
+python -m pytest                 PASS, 79 passed
 python -m bandit -r src          PASS, no issues identified
 python -m pip_audit              DID NOT COMPLETE in this environment because
                                  pypi.org DNS resolution failed
@@ -181,7 +174,7 @@ Validation rule:
 Next planned step:
 
 ```text
-Step 8 — Login service and token foundation.
+Step 9 — Current-user dependency and protected route foundation.
 ```
 
 ## Project name
@@ -2566,6 +2559,188 @@ Suggested commit message:
 ```text
 Add registration API route
 ```
+
+### Step 8 — Login service and token foundation
+
+Status: Complete with documented environment limitations.
+
+Goal:
+
+* Add login authentication service behavior and a minimal token foundation so a
+  registered user can authenticate and receive an access token, without adding
+  protected routes or organization logic yet.
+
+Completed work:
+
+* Added token-related settings to `src/vault/config.py`:
+  `token_secret_key`, `token_algorithm`, and
+  `access_token_expiration_minutes`.
+* Kept token settings safe for local tests and documented that local defaults
+  are not production secrets.
+* Added `AuthenticationError` and `InactiveUserError` in
+  `src/vault/exceptions.py`.
+* Added `UserLoginRequest` and `UserLoginResponse` in
+  `src/vault/auth/schemas.py`.
+* Login requests include `email` and `password`.
+* Login responses include `access_token` and `token_type`.
+* Login `token_type` defaults to `bearer`.
+* Blank login email and password values are rejected by schema validation.
+* Added `AuthenticatedUser` as safe authenticated-user service return data.
+* Added `authenticate_user()` in `src/vault/auth/service.py`.
+* The login service accepts a SQLAlchemy `Session`, email, and raw password.
+* The login service normalizes email before lookup.
+* The login service verifies passwords through the existing password helper.
+* The login service rejects wrong passwords.
+* The login service rejects unknown emails.
+* The login service rejects inactive users.
+* The login service does not return raw passwords or password hashes.
+* Added `src/vault/auth/tokens.py`.
+* Added typed `create_access_token()` helper.
+* Added typed `decode_access_token()` helper.
+* Access-token payloads include the user ID as the `sub` subject claim.
+* Access-token payloads include an `exp` expiration claim.
+* Tokens are signed with HS256 using standard-library HMAC/SHA-256 helpers.
+* Token validation checks token structure, signature, algorithm, token type,
+  subject, and expiration.
+* Added `POST /auth/login`.
+* Kept the login route thin.
+* The login route calls the login service.
+* The login route creates an access token only after successful authentication.
+* The login route does not perform password verification directly.
+* The login route does not expose raw passwords or password hashes.
+* Successful login returns HTTP 200.
+* Wrong-password and unknown-email attempts return HTTP 401 with the same safe
+  public error.
+* Inactive-user login attempts return HTTP 403 with the same safe public error.
+* Updated the FastAPI app description to include login as implemented behavior.
+* Added service tests for login success, email normalization, wrong password,
+  unknown email, inactive users, and safe service return data.
+* Added token tests for token creation, decoding, subject, expiration, expired
+  token rejection, and wrong-secret rejection.
+* Added API tests for successful login, bearer token response, response safety,
+  wrong password, unknown email, inactive users, blank fields, and OpenAPI
+  inclusion.
+* Added settings tests for token defaults and environment overrides.
+* Existing registration behavior remains covered and passing.
+* No current-user dependency, protected routes, refresh tokens, password reset,
+  email verification, organizations, memberships, RBAC, uploads, reviews, audit
+  logs, exports, sample outputs, CI, local databases, or migration files were
+  added.
+
+Files created or edited:
+
+```text
+src/vault/config.py
+src/vault/exceptions.py
+src/vault/api/main.py
+src/vault/api/routes/auth.py
+src/vault/auth/schemas.py
+src/vault/auth/service.py
+src/vault/auth/tokens.py
+tests/test_auth_login_service.py
+tests/test_auth_tokens.py
+tests/test_auth_login_api.py
+tests/test_config.py
+docs/Project_State.md
+```
+
+Commands run:
+
+```bash
+python -m ruff check .
+python -m mypy src scripts tests
+python -m pytest
+python -m bandit -r src
+python -m pip_audit
+python scripts/run_vault.py --help
+python -m alembic history
+docker --version
+git status --short
+```
+
+Validation results:
+
+```text
+python -m ruff check .
+All checks passed.
+
+python -m mypy src scripts tests
+Success: no issues found in 31 source files.
+
+python -m pytest
+79 passed.
+
+python -m bandit -r src
+No issues identified.
+
+python -m pip_audit
+Did not complete in this environment. pip-audit was installed and run, but
+failed while trying to resolve pypi.org due to DNS/network access. No project
+vulnerability result was produced.
+
+python scripts/run_vault.py --help
+Passed. Help text displayed.
+
+python -m alembic history
+Passed. Alembic history shows 0001_baseline followed by 0002_create_users
+(head). No Step 8 migration was added.
+
+docker --version
+Docker is not installed in this environment, so the optional Docker-backed
+migration smoke check was skipped.
+
+git status --short
+Did not complete in this environment because the uploaded repo zip did not
+include `.git` metadata.
+```
+
+Validation note:
+
+```text
+Step 8 is complete in the uploaded runtime with the documented limitations. The
+offline code validation suite passed. pip-audit could not complete because this
+runtime could not resolve pypi.org. Docker-backed migration checks were skipped
+because Docker is not installed. git status could not run because the uploaded
+zip does not include .git metadata.
+```
+
+Definition of done:
+
+* Login service behavior exists.
+* Login service normalizes email.
+* Login service verifies passwords through existing password helpers.
+* Login service rejects invalid credentials.
+* Login service rejects inactive users.
+* Token creation helper exists.
+* Token payload includes user ID as subject.
+* Token payload includes expiration.
+* `POST /auth/login` exists.
+* Login route returns HTTP 200 on success.
+* Login route returns a bearer access token.
+* Login route does not expose raw passwords.
+* Login route does not expose password hashes.
+* Invalid login attempts return safe public errors.
+* Tests cover login service behavior.
+* Tests cover token behavior.
+* Tests cover login API behavior.
+* Existing tests still pass.
+* Ruff passes.
+* Mypy passes.
+* Pytest passes.
+* Bandit passes.
+* pip-audit was run and the DNS/network limitation is documented.
+* CLI help works.
+* Alembic history works.
+* Project State is updated.
+* No generated private/local files are included.
+
+Suggested commit message:
+
+```text
+Add login and token foundation
+```
+
+---
 
 ## Portfolio readiness checklist
 

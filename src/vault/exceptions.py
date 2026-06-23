@@ -11,3 +11,11 @@ class ValidationError(VaultError):
 
 class DuplicateUserError(VaultError):
     """Raised when user creation would duplicate an email address."""
+
+
+class AuthenticationError(VaultError):
+    """Raised when authentication credentials or tokens are invalid."""
+
+
+class InactiveUserError(AuthenticationError):
+    """Raised when an inactive user attempts to authenticate."""

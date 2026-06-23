@@ -1,14 +1,32 @@
-"""User creation services for Vault authentication."""
+"""User creation and login services for Vault authentication."""
 
 from __future__ import annotations
+
+from dataclasses import dataclass
+from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from vault.auth.models import User
-from vault.auth.passwords import hash_password
-from vault.exceptions import DuplicateUserError, ValidationError
+from vault.auth.passwords import hash_password, verify_password
+from vault.exceptions import (
+    AuthenticationError,
+    DuplicateUserError,
+    InactiveUserError,
+    ValidationError,
+)
+
+
+@dataclass(frozen=True, slots=True)
+class AuthenticatedUser:
+    """Safe authenticated-user data returned by login services."""
+
+    id: UUID
+    email: str
+    full_name: str
+    is_active: bool
 
 
 def create_user(
@@ -38,6 +56,34 @@ def create_user(
         raise DuplicateUserError("A user with this email already exists.") from exc
 
     return user
+
+
+def authenticate_user(
+    session: Session,
+    *,
+    email: str,
+    raw_password: str,
+) -> AuthenticatedUser:
+    """Return safe active-user data when credentials are valid."""
+    normalized_email = _normalize_email(email)
+    _validate_password(raw_password)
+
+    user = session.scalar(select(User).where(User.email == normalized_email))
+    if user is None:
+        raise AuthenticationError("Invalid email or password.")
+
+    if not verify_password(raw_password, user.password_hash):
+        raise AuthenticationError("Invalid email or password.")
+
+    if not user.is_active:
+        raise InactiveUserError("Inactive users cannot log in.")
+
+    return AuthenticatedUser(
+        id=user.id,
+        email=user.email,
+        full_name=user.full_name,
+        is_active=user.is_active,
+    )
 
 
 def _normalize_email(email: str) -> str:

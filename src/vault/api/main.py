@@ -10,8 +10,8 @@ from vault.api.routes.health import router as health_router
 
 APP_DESCRIPTION = (
     "Minimal Vault API shell for the secure accounting document workflow app. "
-    "Current behavior is limited to health, OpenAPI, and registration. "
-    "Login, uploads, reviews, audit logs, and exports are planned later."
+    "Current behavior is limited to health, OpenAPI, registration, and login. "
+    "Uploads, reviews, audit logs, and exports are planned later."
 )
 
 

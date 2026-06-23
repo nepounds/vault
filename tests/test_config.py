@@ -23,3 +23,27 @@ def test_database_url_can_be_read_from_environment() -> None:
     settings = load_settings({"VAULT_DATABASE_URL": database_url})
 
     assert settings.database_url == database_url
+
+
+def test_token_settings_have_safe_local_defaults() -> None:
+    """Token settings can load locally without real secrets."""
+    settings = load_settings({})
+
+    assert settings.token_secret_key == "vault-local-development-secret"
+    assert settings.token_algorithm == "HS256"
+    assert settings.access_token_expiration_minutes == 30
+
+
+def test_token_settings_can_be_read_from_environment() -> None:
+    """Token settings can be overridden by environment variables."""
+    settings = load_settings(
+        {
+            "VAULT_TOKEN_SECRET_KEY": "fake test secret",
+            "VAULT_TOKEN_ALGORITHM": "HS256",
+            "VAULT_ACCESS_TOKEN_EXPIRATION_MINUTES": "15",
+        }
+    )
+
+    assert settings.token_secret_key == "fake test secret"
+    assert settings.token_algorithm == "HS256"
+    assert settings.access_token_expiration_minutes == 15

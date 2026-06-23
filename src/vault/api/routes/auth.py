@@ -8,9 +8,20 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from vault.api.dependencies import get_database_session
-from vault.auth.schemas import UserRegistrationRequest, UserRegistrationResponse
-from vault.auth.service import create_user
-from vault.exceptions import DuplicateUserError, ValidationError
+from vault.auth.schemas import (
+    UserLoginRequest,
+    UserLoginResponse,
+    UserRegistrationRequest,
+    UserRegistrationResponse,
+)
+from vault.auth.service import authenticate_user, create_user
+from vault.auth.tokens import create_access_token
+from vault.exceptions import (
+    AuthenticationError,
+    DuplicateUserError,
+    InactiveUserError,
+    ValidationError,
+)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -46,3 +57,35 @@ def register_user(
         ) from exc
 
     return UserRegistrationResponse.model_validate(user)
+
+
+@router.post(
+    "/login",
+    response_model=UserLoginResponse,
+    status_code=status.HTTP_200_OK,
+)
+def login_user(
+    login: UserLoginRequest,
+    session: Annotated[Session, Depends(get_database_session)],
+) -> UserLoginResponse:
+    """Authenticate a user and return a bearer access token."""
+    try:
+        user = authenticate_user(
+            session,
+            email=login.email,
+            raw_password=login.password,
+        )
+    except InactiveUserError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid email or password.",
+        ) from exc
+    except (AuthenticationError, ValidationError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password.",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from exc
+
+    access_token = create_access_token(user.id)
+    return UserLoginResponse(access_token=access_token)
