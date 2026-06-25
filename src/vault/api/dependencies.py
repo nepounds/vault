@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -15,7 +16,10 @@ from vault.database import (
     create_engine_from_environment,
     create_session_factory,
 )
-from vault.exceptions import AuthenticationError
+from vault.exceptions import AuthenticationError, OrganizationAccessError
+from vault.organizations.models import Membership
+from vault.organizations.roles import MembershipRole
+from vault.organizations.service import require_membership_role
 
 _bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -55,4 +59,33 @@ def _unauthorized_error() -> HTTPException:
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials.",
         headers={"WWW-Authenticate": "Bearer"},
+    )
+
+def require_organization_roles(
+    *allowed_roles: MembershipRole,
+) -> Callable[..., Membership]:
+    """Build a route dependency requiring explicit organization roles."""
+
+    def dependency(
+        organization_id: UUID,
+        current_user: Annotated[User, Depends(get_current_user)],
+        session: Annotated[Session, Depends(get_database_session)],
+    ) -> Membership:
+        try:
+            return require_membership_role(
+                session,
+                organization_id=organization_id,
+                user_id=current_user.id,
+                allowed_roles=allowed_roles,
+            )
+        except OrganizationAccessError as exc:
+            raise _organization_access_error() from exc
+
+    return dependency
+
+
+def _organization_access_error() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Organization access is not available.",
     )

@@ -37,11 +37,11 @@ Project-control rule:
 
 ## Current status
 
-Current step: Step 13 — Organization membership access helpers.
+Current step: Step 14 — Organization RBAC route dependency.
 
 Status: Complete with documented environment limitations.
 
-Approximate project completion: 48%.
+Approximate project completion: 51%.
 
 Current summary:
 
@@ -221,25 +221,44 @@ Current summary:
 * Owner is not treated as all-powerful yet; owner, reviewer, and viewer roles
   are allowed only when explicitly included.
 * Unknown role values fail closed.
-* No membership management API routes, route-level RBAC dependency,
-  organization-scoped document access enforcement, document uploads, document
-  metadata, reviews, audit logs, exports, refresh tokens, password reset,
-  email verification, CI files, sample outputs, local databases, or application
-  container were added.
+* `src/vault/api/dependencies.py` provides a reusable
+  `require_organization_roles()` route dependency factory.
+* The organization RBAC dependency combines the current authenticated user,
+  database session, `organization_id` path parameter, and explicit allowed
+  role set.
+* The organization RBAC dependency returns the matching `Membership` when
+  access is allowed.
+* Organization RBAC dependency failures return HTTP 403 with a safe generic
+  public message for authenticated users who lack access.
+* Unknown organizations and non-members are rejected the same way.
+* Missing, invalid, expired, unknown-user, and inactive-user bearer tokens still
+  return the existing HTTP 401 authentication error before organization RBAC.
+* `GET /organizations/{organization_id}` exists as a thin protected
+  organization-detail route.
+* `GET /organizations/{organization_id}` requires organization membership using
+  the new reusable RBAC dependency.
+* `GET /organizations/{organization_id}` returns safe organization data only:
+  `id`, `name`, `created_by_user_id`, and `created_at`.
+* `GET /organizations/{organization_id}` does not list members, expose unrelated
+  users, or implement update/delete behavior.
+* No membership management API routes, organization-scoped document access
+  enforcement, document uploads, document metadata, reviews, audit logs,
+  exports, refresh tokens, password reset, email verification, CI files, sample
+  outputs, local databases, migrations, or application container were added.
 
 Current validation status:
 
 ```text
-Step 13 validation was run in the uploaded runtime.
+Step 14 validation was run in the uploaded runtime.
 
-python -m ruff check .
+python -m ruff check . --fix
 All checks passed.
 
 python -m mypy src scripts tests
-Success: no issues found in 43 source files.
+Success: no issues found in 44 source files.
 
 python -m pytest
-161 passed.
+181 passed.
 
 python -m bandit -r src
 No issues identified.
@@ -253,7 +272,7 @@ Passed. Help text displayed.
 
 python -m alembic history
 Passed. Alembic history shows 0001_baseline, 0002_create_users, and
-0003_orgs_memberships as head. No Step 13 migration was added.
+0003_orgs_memberships as head. No Step 14 migration was added.
 
 docker --version
 Docker is not installed in this environment, so the optional Docker-backed
@@ -282,7 +301,7 @@ Validation rule:
 Next planned step:
 
 ```text
-Step 14 — Organization RBAC route dependency.
+Step 15 — Document metadata model and migration.
 ```
 
 
@@ -3644,6 +3663,171 @@ Suggested commit message:
 
 ```text
 Add organization membership access helpers
+```
+
+### Step 14 — Organization RBAC route dependency
+
+Status: Complete with documented environment limitations.
+
+Goal:
+
+* Add reusable FastAPI route dependencies for organization membership and role
+  checks, proving route-level RBAC can be enforced before document routes are
+  added.
+
+Completed work:
+
+* Added reusable `require_organization_roles()` dependency factory in
+  `src/vault/api/dependencies.py`.
+* The dependency factory accepts explicit allowed `MembershipRole` values.
+* The dependency combines the authenticated current user, database session,
+  `organization_id` path parameter, and required role set.
+* The returned dependency calls the Step 13 `require_membership_role()` service
+  helper.
+* The returned dependency returns the matching `Membership` when access is
+  allowed.
+* Non-members are rejected with HTTP 403.
+* Unknown organizations are rejected with HTTP 403 the same way as non-members.
+* Members with the wrong role are rejected with HTTP 403.
+* Access-denied public errors stay safe and generic.
+* Missing, invalid, expired, unknown-user, and inactive-user bearer tokens still
+  return the existing HTTP 401 authentication error from the current-user
+  dependency before organization RBAC runs.
+* Owner is not treated as all-powerful; owner is allowed only when owner is
+  explicitly included in the allowed roles.
+* Reviewer is allowed only when reviewer is explicitly included.
+* Viewer is allowed only when viewer is explicitly included.
+* Multiple allowed roles are supported.
+* Added thin `GET /organizations/{organization_id}` route.
+* `GET /organizations/{organization_id}` uses the new organization RBAC
+  dependency with owner, reviewer, and viewer all explicitly allowed.
+* `GET /organizations/{organization_id}` returns safe organization detail only:
+  `id`, `name`, `created_by_user_id`, and `created_at`.
+* `GET /organizations/{organization_id}` does not list members, expose unrelated
+  users, or implement update/delete behavior.
+* Added `tests/test_organization_rbac_dependency.py`.
+* Dependency tests define small test-only RBAC probe routes for owner-only,
+  reviewer-only, viewer-only, and owner-or-reviewer checks.
+* Tests cover allowed owner, reviewer, and viewer access.
+* Tests cover non-member denial, unknown-organization denial, wrong-role denial,
+  explicit-role behavior, multiple allowed roles, and returned membership data.
+* Tests cover missing, invalid, expired, and inactive-user tokens preserving
+  HTTP 401 authentication behavior.
+* Tests cover the production organization detail route returning safe data,
+  rejecting non-members, and appearing in OpenAPI.
+* Existing Step 1 through Step 13 tests remain passing in this runtime.
+* No migrations were added in this step.
+* No document uploads, document metadata, document facts, control flags,
+  duplicate detection, review workflow, audit logging, exports, sample outputs,
+  CI files, local databases, or membership management routes were added.
+
+Files created or edited:
+
+```text
+src/vault/api/dependencies.py
+src/vault/api/routes/organizations.py
+tests/test_organization_rbac_dependency.py
+docs/Project_State.md
+```
+
+Commands run:
+
+```bash
+python -m pip install -e ".[dev]"
+python -m ruff check . --fix
+python -m mypy src scripts tests
+python -m pytest
+python -m bandit -r src
+python -m pip_audit
+python scripts/run_vault.py --help
+python -m alembic history
+docker --version
+git status --short
+```
+
+Validation results:
+
+```text
+python -m pip install -e ".[dev]"
+Passed. Editable install completed with runtime and development dependencies.
+
+python -m ruff check . --fix
+All checks passed.
+
+python -m mypy src scripts tests
+Success: no issues found in 44 source files.
+
+python -m pytest
+181 passed.
+
+python -m bandit -r src
+No issues identified.
+
+python -m pip_audit
+Did not complete in this environment because pypi.org could not be resolved.
+No project vulnerability result was produced.
+
+python scripts/run_vault.py --help
+Passed. Help text displayed.
+
+python -m alembic history
+Passed. Alembic history shows 0001_baseline, 0002_create_users, and
+0003_orgs_memberships as head. No Step 14 migration was added.
+
+docker --version
+Docker is not installed in this environment, so the optional Docker-backed
+migration smoke check was skipped.
+
+git status --short
+Did not complete in this environment because the uploaded repo zip did not
+include `.git` metadata.
+```
+
+Validation note:
+
+```text
+Step 14 is complete in the uploaded runtime with the documented limitations.
+The offline code validation suite passed. pip-audit could not complete because
+this runtime could not resolve pypi.org. Docker-backed migration checks were
+skipped because Docker is not installed. git status could not run because the
+uploaded zip does not include .git metadata.
+```
+
+Definition of done:
+
+* Reusable organization RBAC route dependency exists.
+* Dependency uses current-user authentication.
+* Dependency uses database session dependency.
+* Dependency uses organization membership access helpers.
+* Dependency supports explicit allowed-role sets.
+* Non-members are rejected.
+* Unknown organizations are rejected.
+* Wrong-role members are rejected.
+* Allowed-role members are permitted.
+* Owner is not automatically allowed unless explicitly included.
+* Reviewer is not automatically allowed unless explicitly included.
+* Viewer is not automatically allowed unless explicitly included.
+* Missing/invalid/expired tokens still produce authentication errors.
+* Access failures are safe and generic.
+* No document routes are added yet.
+* No migrations are added in this step.
+* Tests cover allowed access, denied access, wrong roles, unknown orgs,
+  non-members, and authentication failure behavior.
+* Existing tests still pass.
+* Ruff passes.
+* Mypy passes.
+* Pytest passes.
+* Bandit passes.
+* pip-audit was run and the DNS/network limitation is documented.
+* CLI help still works.
+* Alembic history still works.
+* Project State is updated.
+* No generated private/local files are included.
+
+Suggested commit message:
+
+```text
+Add organization RBAC route dependency
 ```
 
 ## Portfolio readiness checklist

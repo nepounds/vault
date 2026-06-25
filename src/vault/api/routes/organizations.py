@@ -2,14 +2,23 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Annotated, Literal, cast
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from vault.api.dependencies import get_current_user, get_database_session
+from vault.api.dependencies import (
+    get_current_user,
+    get_database_session,
+    require_organization_roles,
+)
 from vault.auth.models import User
 from vault.exceptions import OrganizationValidationError
+from vault.organizations.models import Membership, Organization
+from vault.organizations.roles import MembershipRole
 from vault.organizations.schemas import (
     OrganizationCreateRequest,
     OrganizationCreateResponse,
@@ -17,6 +26,15 @@ from vault.organizations.schemas import (
 from vault.organizations.service import create_organization
 
 router = APIRouter(prefix="/organizations", tags=["organizations"])
+
+
+class OrganizationDetailResponse(BaseModel):
+    """Safe response body for an organization visible to a member."""
+
+    id: UUID
+    name: str
+    created_by_user_id: UUID
+    created_at: datetime
 
 
 @router.post(
@@ -52,4 +70,37 @@ def create_organization_route(
         created_at=result.organization.created_at,
         membership_id=result.membership.id,
         role=cast("Literal['owner', 'reviewer', 'viewer']", result.membership.role),
+    )
+
+@router.get(
+    "/{organization_id}",
+    response_model=OrganizationDetailResponse,
+)
+def get_organization_route(
+    organization_id: UUID,
+    membership: Annotated[
+        Membership,
+        Depends(
+            require_organization_roles(
+                MembershipRole.OWNER,
+                MembershipRole.REVIEWER,
+                MembershipRole.VIEWER,
+            )
+        ),
+    ],
+    session: Annotated[Session, Depends(get_database_session)],
+) -> OrganizationDetailResponse:
+    """Return safe organization data for an authenticated member."""
+    organization = session.get(Organization, membership.organization_id)
+    if organization is None or organization.id != organization_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Organization access is not available.",
+        )
+
+    return OrganizationDetailResponse(
+        id=organization.id,
+        name=organization.name,
+        created_by_user_id=organization.created_by_user_id,
+        created_at=organization.created_at,
     )
