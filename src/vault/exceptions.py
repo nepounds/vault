@@ -27,3 +27,16 @@ class OrganizationError(VaultError):
 
 class OrganizationValidationError(OrganizationError):
     """Raised when organization input fails service validation."""
+
+
+class OrganizationAccessError(OrganizationError):
+    """Base exception for organization access errors."""
+
+
+class OrganizationMembershipRequiredError(OrganizationAccessError):
+    """Raised when organization membership is required."""
+
+
+class OrganizationRoleRequiredError(OrganizationAccessError):
+    """Raised when an organization role is required."""
+

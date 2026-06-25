@@ -37,11 +37,11 @@ Project-control rule:
 
 ## Current status
 
-Current step: Step 11 — Organization creation service.
+Current step: Step 13 — Organization membership access helpers.
 
 Status: Complete with documented environment limitations.
 
-Approximate project completion: 42%.
+Approximate project completion: 48%.
 
 Current summary:
 
@@ -78,6 +78,29 @@ Current summary:
 * `GET /auth/me` does not return raw passwords or password hashes.
 * The auth route is included through the existing auth router in the FastAPI app
   factory.
+* `POST /organizations` exists and returns HTTP 201 on successful authenticated
+  organization creation.
+* `POST /organizations` requires a valid bearer token for an active user.
+* Missing, invalid, expired, unknown-user, and inactive-user bearer tokens are
+  rejected before organization creation.
+* `POST /organizations` depends on the existing current-user dependency.
+* `POST /organizations` depends on the existing database session dependency.
+* The organization creation route calls the existing `create_organization()`
+  service.
+* The organization creation route does not manually create `Organization` or
+  `Membership` ORM records.
+* The organization creation route commits successful organization creation.
+* The organization creation route refreshes the created organization and owner
+  membership before returning.
+* Organization creation requests include `name`.
+* Blank and whitespace-only organization names are rejected as client errors.
+* Organization creation responses return safe organization data: `id`, `name`,
+  `created_by_user_id`, and `created_at`.
+* Organization creation responses include owner membership data:
+  `membership_id` and `role`.
+* Organization creation responses do not return raw passwords, password hashes,
+  token internals, or unrelated user data.
+* `POST /organizations` appears in the OpenAPI schema.
 * `src/vault/api/dependencies.py` provides a database session dependency that
   yields and safely closes a SQLAlchemy session.
 * The database session dependency creates no global database connection at
@@ -181,29 +204,64 @@ Current summary:
 * Organization and owner membership records are added to the same supplied
   session and flushed together so generated IDs are available.
 * Organization creation does not commit automatically.
-* No organization API routes, membership service layer, RBAC enforcement,
-  organization-scoped data access enforcement, document uploads, document
-  metadata, reviews, audit logs, exports, refresh tokens, password reset, email
-  verification, CI files, sample outputs, local databases, or application
+* `src/vault/organizations/service.py` provides typed organization membership
+  access helpers.
+* `get_membership_for_user()` returns a user's membership for an organization
+  or `None` when no membership exists.
+* `require_membership()` returns a user's membership or raises a safe custom
+  access exception when membership is missing.
+* `membership_has_role()` checks whether a membership role is explicitly
+  included in the allowed role set.
+* `require_membership_role()` requires organization membership and an
+  explicitly allowed role.
+* Organization access exceptions now include `OrganizationAccessError`,
+  `OrganizationMembershipRequiredError`, and `OrganizationRoleRequiredError`.
+* Organization role checks use official role values from
+  `src/vault/organizations/roles.py`.
+* Owner is not treated as all-powerful yet; owner, reviewer, and viewer roles
+  are allowed only when explicitly included.
+* Unknown role values fail closed.
+* No membership management API routes, route-level RBAC dependency,
+  organization-scoped document access enforcement, document uploads, document
+  metadata, reviews, audit logs, exports, refresh tokens, password reset,
+  email verification, CI files, sample outputs, local databases, or application
   container were added.
 
 Current validation status:
 
 ```text
-python -m ruff check .           PASS
-python -m mypy src scripts tests PASS, 39 source files checked
-python -m pytest                 PASS, 128 passed
-python -m bandit -r src          PASS, no issues identified
-python -m pip_audit              DID NOT COMPLETE in this environment because
-                                 pypi.org DNS resolution failed
-python scripts/run_vault.py --help PASS
-python -m alembic history        PASS
-docker --version                 Docker is not installed in this environment
-Docker-backed migration checks    SKIPPED in this environment because Docker is
-                                 not installed
-git status                       DID NOT COMPLETE in this environment because
-                                 the uploaded repo zip did not include `.git`
-                                 metadata
+Step 13 validation was run in the uploaded runtime.
+
+python -m ruff check .
+All checks passed.
+
+python -m mypy src scripts tests
+Success: no issues found in 43 source files.
+
+python -m pytest
+161 passed.
+
+python -m bandit -r src
+No issues identified.
+
+python -m pip_audit
+Did not complete in this environment because pypi.org could not be resolved.
+No project vulnerability result was produced.
+
+python scripts/run_vault.py --help
+Passed. Help text displayed.
+
+python -m alembic history
+Passed. Alembic history shows 0001_baseline, 0002_create_users, and
+0003_orgs_memberships as head. No Step 13 migration was added.
+
+docker --version
+Docker is not installed in this environment, so the optional Docker-backed
+migration smoke check was skipped.
+
+git status --short
+Did not complete in this environment because the uploaded repo zip did not
+include `.git` metadata.
 ```
 
 Required validation commands:
@@ -224,8 +282,9 @@ Validation rule:
 Next planned step:
 
 ```text
-Step 12 — Organization creation API route.
+Step 14 — Organization RBAC route dependency.
 ```
+
 
 ## Project name
 
@@ -3275,6 +3334,317 @@ Add organization creation service
 ```
 
 ---
+
+### Step 12 — Organization creation API route
+
+Status: Implementation complete; final local validation results need to be
+confirmed in this Project State file after the validation suite is rerun.
+
+Goal:
+
+* Add an authenticated organization creation API route that uses the existing
+  current-user dependency and existing organization creation service to create
+  an organization for the logged-in user.
+
+Completed work:
+
+* Added `src/vault/api/routes/organizations.py`.
+* Added an authenticated `POST /organizations` endpoint.
+* Included the organizations router in the FastAPI app factory.
+* Kept the organization creation route thin.
+* The route depends on the existing current-user dependency.
+* The route depends on the existing database session dependency.
+* The route calls the existing `create_organization()` service.
+* The route does not manually create `Organization` or `Membership` ORM
+  records.
+* The route commits successful organization creation.
+* The route refreshes the created organization and owner membership before
+  returning.
+* Added `src/vault/organizations/schemas.py`.
+* Added an organization creation request schema with `name`.
+* Added an organization creation response schema with safe organization data:
+  `id`, `name`, `created_by_user_id`, and `created_at`.
+* Included owner membership data in the organization creation response:
+  `membership_id` and `role`.
+* The response does not include raw passwords, password hashes, token payload
+  internals, or unrelated user data.
+* Successful organization creation returns HTTP 201.
+* Missing bearer tokens return HTTP 401.
+* Invalid bearer tokens return HTTP 401.
+* Expired bearer tokens return HTTP 401.
+* Inactive authenticated users cannot create organizations.
+* Blank organization names are rejected.
+* Whitespace-only organization names are rejected.
+* Duplicate organization names are not rejected in this step because no
+  uniqueness rule exists for organization names yet.
+* No database migration was added in this step.
+* No RBAC checks were added beyond requiring an authenticated active user.
+* No organization-scoped authorization is claimed complete yet.
+* Added `tests/test_organization_create_api.py`.
+* API tests cover missing token, invalid token, expired token, valid token,
+  returned organization ID, trimmed organization name, creator user ID, owner
+  role, database organization persistence, database owner membership
+  persistence, official `owner` role value, blank-name rejection,
+  whitespace-only-name rejection, inactive-user rejection, password exclusion,
+  password-hash exclusion, and OpenAPI inclusion.
+* Existing Step 1 through Step 11 behavior should remain passing.
+* No listing organizations, reading organization detail, updating
+  organizations, deleting organizations, inviting members, removing members,
+  changing member roles, RBAC enforcement dependency, organization-scoped data
+  access enforcement, document uploads, document metadata, reviews, audit logs,
+  exports, sample outputs, CI, local databases, or migrations were added.
+
+Files created or edited:
+
+```text
+src/vault/api/main.py
+src/vault/api/routes/organizations.py
+src/vault/organizations/schemas.py
+tests/test_organization_create_api.py
+docs/Project_State.md
+```
+
+Commands to run:
+
+```bash
+python -m ruff check .
+python -m mypy src scripts tests
+python -m pytest
+python -m bandit -r src
+python -m pip_audit
+python scripts/run_vault.py --help
+python -m alembic history
+git status
+```
+
+Optional Docker-backed migration smoke check if Docker is available locally:
+
+```bash
+docker compose up -d db
+python -m alembic upgrade head
+python -m alembic current
+docker compose down
+```
+
+Validation results:
+
+```text
+Final Step 12 local validation output has not been documented in this
+regenerated Project State file yet.
+
+Update this section after local validation is rerun or pasted.
+
+Expected checks:
+
+python -m ruff check .
+python -m mypy src scripts tests
+python -m pytest
+python -m bandit -r src
+python -m pip_audit
+python scripts/run_vault.py --help
+python -m alembic history
+git status
+
+Docker-backed migration checks should be documented as run or skipped.
+```
+
+Validation note:
+
+```text
+The Step 12 implementation is present in this regenerated Project State file,
+but final local validation results should be filled in before treating this file
+as the final completed Step 12 record.
+```
+
+Definition of done:
+
+* `POST /organizations` exists.
+* The route requires authentication.
+* The route uses the current-user dependency.
+* The route uses the database session dependency.
+* The route calls the existing organization creation service.
+* The route returns HTTP 201 on success.
+* The route commits successful organization creation.
+* The response returns safe organization data.
+* The response does not expose raw passwords.
+* The response does not expose password hashes.
+* Blank organization names are rejected.
+* Whitespace-only organization names are rejected.
+* Invalid, missing, and expired tokens are rejected.
+* Inactive users cannot create organizations.
+* Successful creation stores an organization.
+* Successful creation stores an owner membership for the creator.
+* Tests cover success and failure cases.
+* Existing tests still pass.
+* Ruff passes.
+* Mypy passes.
+* Pytest passes.
+* Bandit passes or documented findings are explained.
+* pip-audit passes or documented findings are explained.
+* CLI help still works.
+* Alembic history still works.
+* Project State is updated.
+* `git status` shows only expected files.
+* No generated private/local files are staged.
+
+Suggested commit message:
+
+```text
+Add organization creation API route
+```
+
+---
+
+
+### Step 13 — Organization membership access helpers
+
+Status: Complete with documented environment limitations.
+
+Goal:
+
+* Add service-layer membership access helpers that can answer whether a user is
+  a member of an organization and whether the user has an allowed role, without
+  adding full RBAC route enforcement yet.
+
+Completed work:
+
+* Added typed `get_membership_for_user()` helper in
+  `src/vault/organizations/service.py`.
+* `get_membership_for_user()` returns the matching `Membership` when the user
+  belongs to the organization.
+* `get_membership_for_user()` returns `None` when the user is not a member.
+* Added typed `require_membership()` helper.
+* `require_membership()` returns the matching membership when it exists.
+* `require_membership()` raises `OrganizationMembershipRequiredError` when the
+  user is not a member or the organization is unknown.
+* Added typed `membership_has_role()` helper.
+* `membership_has_role()` checks only explicitly allowed roles.
+* Added typed `require_membership_role()` helper.
+* `require_membership_role()` requires both membership and an explicitly
+  allowed role.
+* Added `OrganizationAccessError`, `OrganizationMembershipRequiredError`, and
+  `OrganizationRoleRequiredError` in `src/vault/exceptions.py`.
+* Kept public access error messages safe and generic.
+* Role checks use official role values from
+  `src/vault/organizations/roles.py`.
+* Owner is not automatically allowed when only reviewer is allowed.
+* Reviewer is not automatically allowed when only owner is allowed.
+* Viewer is not automatically allowed when owner or reviewer is required.
+* Multiple allowed roles are supported.
+* Unknown allowed-role values fail closed.
+* Unknown membership role values fail closed.
+* Added `tests/test_organization_access_service.py`.
+* Tests cover membership lookup, required membership, role checks, role denial,
+  explicit role behavior, multiple allowed roles, official role values, and
+  fail-closed behavior.
+* Existing Step 1 through Step 12 tests remain passing in this runtime.
+* No API route RBAC dependency, organization-scoped document access, membership
+  invitation route, membership removal route, membership role-change route,
+  document uploads, reviews, audit logs, exports, sample outputs, CI files,
+  local databases, or migrations were added.
+
+Files created or edited:
+
+```text
+src/vault/organizations/service.py
+src/vault/exceptions.py
+tests/test_organization_access_service.py
+docs/Project_State.md
+```
+
+Commands run:
+
+```bash
+python -m pip install -e ".[dev]"
+python -m ruff check .
+python -m mypy src scripts tests
+python -m pytest
+python -m bandit -r src
+python -m pip_audit
+python scripts/run_vault.py --help
+python -m alembic history
+docker --version
+git status --short
+```
+
+Validation results:
+
+```text
+python -m ruff check .
+All checks passed.
+
+python -m mypy src scripts tests
+Success: no issues found in 43 source files.
+
+python -m pytest
+161 passed.
+
+python -m bandit -r src
+No issues identified.
+
+python -m pip_audit
+Did not complete in this environment because pypi.org could not be resolved.
+No project vulnerability result was produced.
+
+python scripts/run_vault.py --help
+Passed. Help text displayed.
+
+python -m alembic history
+Passed. Alembic history shows 0001_baseline, 0002_create_users, and
+0003_orgs_memberships as head. No Step 13 migration was added.
+
+docker --version
+Docker is not installed in this environment, so the optional Docker-backed
+migration smoke check was skipped.
+
+git status --short
+Did not complete in this environment because the uploaded repo zip did not
+include `.git` metadata.
+```
+
+Validation note:
+
+```text
+Step 13 is complete in the uploaded runtime with the documented limitations.
+The offline code validation suite passed. pip-audit could not complete because
+this runtime could not resolve pypi.org. Docker-backed migration checks were
+skipped because Docker is not installed. git status could not run because the
+uploaded zip does not include .git metadata.
+```
+
+Definition of done:
+
+* Membership lookup helper exists.
+* Required membership helper exists.
+* Role-check helper exists.
+* Required-role helper exists.
+* Helpers use official role values.
+* Non-members are rejected.
+* Unknown organizations fail closed.
+* Role checks fail closed.
+* Owner is not automatically allowed unless explicitly included.
+* Reviewer is not automatically allowed unless explicitly included.
+* Viewer is not automatically allowed unless explicitly included.
+* No API route RBAC enforcement is added yet.
+* No migrations are added in this step.
+* Tests cover membership lookup, required membership, role checks, and failure
+  cases.
+* Existing tests still pass.
+* Ruff passes.
+* Mypy passes.
+* Pytest passes.
+* Bandit passes.
+* pip-audit was run and the DNS/network limitation is documented.
+* CLI help works.
+* Alembic history works.
+* Project State is updated.
+* No generated private/local files are included.
+
+Suggested commit message:
+
+```text
+Add organization membership access helpers
+```
 
 ## Portfolio readiness checklist
 
