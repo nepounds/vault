@@ -40,6 +40,7 @@ class OrganizationMembershipRequiredError(OrganizationAccessError):
 class OrganizationRoleRequiredError(OrganizationAccessError):
     """Raised when an organization role is required."""
 
+
 class DocumentError(VaultError):
     """Base exception for document service errors."""
 
@@ -47,3 +48,6 @@ class DocumentError(VaultError):
 class DocumentValidationError(DocumentError):
     """Raised when document metadata fails service validation."""
 
+
+class DocumentUploadValidationError(DocumentError):
+    """Raised when upload metadata fails validation."""

@@ -37,11 +37,11 @@ Project-control rule:
 
 ## Current status
 
-Current step: Step 16 — Document metadata service.
+Current step: Step 17 — Secure upload validation helpers.
 
 Status: Complete with documented environment limitations.
 
-Approximate project completion: 58%.
+Approximate project completion: 61%.
 
 Current summary:
 
@@ -294,23 +294,40 @@ Current summary:
   verification yet.
 * Duplicate SHA-256 hashes are still allowed because duplicate detection has
   not been implemented yet.
+* `src/vault/documents/validation.py` provides framework-independent upload
+  metadata validation helpers.
+* `ValidatedUploadMetadata` returns safe display metadata after validation:
+  original filename, content type, file size, and normalized extension.
+* Upload metadata validation accepts `.csv`, `.txt`, and `.pdf` filenames when
+  they match the allowed MVP content types.
+* Upload metadata validation rejects blank filenames, whitespace-only
+  filenames, path separators, path traversal attempts, hidden filenames,
+  extensionless filenames, unsupported extensions, unsupported content types,
+  mismatched extension/content-type pairs, zero-byte files, negative file
+  sizes, and oversized files.
+* Upload metadata validation uses an explicit 5 MiB maximum upload size.
+* Upload metadata validation trims surrounding whitespace from display filename
+  metadata only.
+* Upload metadata validation performs no file reads, file writes, stored
+  filename generation, SHA-256 hash calculation, file-content inspection,
+  database access, or framework-specific request handling.
 * No membership management API routes, organization-scoped document access
-  enforcement, document uploads, document routes, upload validation helpers,
-  document facts, reviews, audit logs, exports, refresh tokens, password
-  reset, email verification, CI files, sample outputs, local databases beyond
-  metadata migrations, or application container were added.
+  enforcement, document upload routes, document routes, document facts,
+  reviews, audit logs, exports, refresh tokens, password reset, email
+  verification, CI files, sample outputs, local databases beyond metadata
+  migrations, or application container were added.
 
 Current validation status:
 
 ```text
-Step 16 validation was run in the uploaded runtime with partial tooling
+Step 17 validation was run in the uploaded runtime with partial tooling
 limitations.
 
-python -m pytest tests/test_document_service.py -q
-Passed. 28 passed.
+python -m pytest tests/test_upload_validation.py -q
+Passed. 24 passed.
 
 python -m pytest -q
-Passed. 225 passed.
+Passed. 249 passed.
 
 python scripts/run_vault.py --help
 Passed. Help text displayed.
@@ -361,7 +378,7 @@ Validation rule:
 Next planned step:
 
 ```text
-Step 17 — Secure upload validation helpers.
+Step 18 — File storage and hashing helpers.
 ```
 
 
@@ -4222,6 +4239,167 @@ Suggested commit message:
 
 ```text
 Add document metadata service
+```
+
+
+### Step 17 — Secure upload validation helpers
+
+Status: Complete with documented environment limitations.
+
+Goal:
+
+* Add directly testable secure upload validation helpers that validate file
+  metadata before storage and document creation, without writing files or
+  adding API routes yet.
+
+Completed work:
+
+* Added `src/vault/documents/validation.py`.
+* Added typed `ValidatedUploadMetadata` result data.
+* Added typed `validate_upload_metadata()` helper.
+* The helper accepts `original_filename`, `content_type`, and
+  `file_size_bytes` only.
+* Defined explicit MVP allowed extensions: `.csv`, `.txt`, and `.pdf`.
+* Defined explicit MVP allowed content types: `text/csv`, `text/plain`, and
+  `application/pdf`.
+* Defined explicit `MAX_UPLOAD_SIZE_BYTES` as 5 MiB.
+* Validation trims surrounding whitespace from display filename metadata only.
+* Validation preserves a safe display filename in the returned result.
+* Validation normalizes the returned extension to lowercase.
+* Extension matching is case-insensitive.
+* Blank filenames are rejected.
+* Whitespace-only filenames are rejected.
+* Filenames containing forward slashes are rejected.
+* Filenames containing backslashes are rejected.
+* Obvious path traversal attempts are rejected.
+* Hidden filenames are rejected.
+* Extensionless filenames are rejected.
+* Unsupported extensions are rejected.
+* Unsupported content types are rejected.
+* Mismatched extension/content-type pairs are rejected.
+* Zero-byte files are rejected.
+* Negative file sizes are rejected.
+* Files larger than the configured maximum are rejected.
+* Files exactly at the configured maximum are accepted.
+* Added `DocumentUploadValidationError` in `src/vault/exceptions.py`.
+* Kept the helper framework-independent and directly testable.
+* Confirmed validation performs no file I/O.
+* Existing document metadata service behavior remains unchanged.
+* No database migrations were added because the `documents` table did not
+  change.
+* No upload routes, multipart handling, file storage writes, stored filename
+  generation, SHA-256 hashing from bytes, document metadata routes, document
+  listing/detail routes, document facts, control flags, duplicate detection,
+  review decisions, audit logging, CSV exports, sample input/output generation,
+  CI files, local databases, or application container were added.
+
+Files created or edited:
+
+```text
+src/vault/documents/validation.py
+src/vault/exceptions.py
+tests/test_upload_validation.py
+docs/Project_State.md
+```
+
+Commands run:
+
+```bash
+python -m pytest tests/test_upload_validation.py -q
+python -m pytest -q
+python scripts/run_vault.py --help
+python -m alembic history
+python -m ruff check .
+python -m mypy src scripts tests
+python -m bandit -r src
+python -m pip_audit
+git status --short
+```
+
+Validation results:
+
+```text
+python -m pytest tests/test_upload_validation.py -q
+24 passed.
+
+python -m pytest -q
+249 passed.
+
+python scripts/run_vault.py --help
+Passed. Help text displayed.
+
+python -m alembic history
+Passed. Alembic history shows 0001_baseline, 0002_create_users,
+0003_orgs_memberships, and 0004_create_documents as head.
+
+python -m ruff check .
+Could not run in this environment because Ruff is not installed in the active
+runtime.
+
+python -m mypy src scripts tests
+Could not run in this environment because mypy is not installed in the active
+runtime.
+
+python -m bandit -r src
+Could not run in this environment because Bandit is not installed in the active
+runtime.
+
+python -m pip_audit
+Could not run in this environment because pip-audit is not installed in the
+active runtime. No project vulnerability result was produced.
+
+git status --short
+Did not complete in this environment because the uploaded repo zip did not
+include `.git` metadata.
+
+Optional Docker-backed migration smoke check
+Skipped in this environment because Docker is not installed.
+```
+
+Validation note:
+
+```text
+Step 17 is complete in the uploaded runtime with documented tooling
+limitations. Pytest, CLI help, and Alembic history passed. Ruff, mypy, Bandit,
+pip-audit, git status, and Docker-backed migration checks should be run locally
+before committing.
+```
+
+Definition of done:
+
+* Upload metadata validation helper exists.
+* Allowed extensions are explicit.
+* Allowed content types are explicit.
+* Maximum upload size is explicit.
+* Valid `.csv`, `.txt`, and `.pdf` metadata is accepted.
+* Blank filenames are rejected.
+* Path separators and path traversal are rejected.
+* Unsupported extensions are rejected.
+* Unsupported content types are rejected.
+* Invalid file sizes are rejected.
+* Oversized files are rejected.
+* Validation returns normalized safe display metadata.
+* Validation performs no file I/O.
+* No upload route is added yet.
+* No file storage writes are added yet.
+* No SHA-256 hashing from bytes is added yet.
+* No document facts are added yet.
+* No audit logging is added yet.
+* No migrations are added in this step.
+* Tests cover upload validation behavior.
+* Existing tests still pass.
+* Pytest passes.
+* CLI help works.
+* Alembic history works.
+* Ruff, mypy, Bandit, and pip-audit need local validation because those tools
+  were unavailable in the uploaded runtime.
+* Project State is updated.
+* No generated private/local files are included.
+
+Suggested commit message:
+
+```text
+Add secure upload validation helpers
 ```
 
 ## Portfolio readiness checklist
