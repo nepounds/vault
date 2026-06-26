@@ -13,6 +13,7 @@ dependencies = [
     "argon2-cffi",
     "fastapi",
     "psycopg",
+    "python-multipart",
     "sqlalchemy",
 ]
 

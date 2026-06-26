@@ -37,18 +37,18 @@ Project-control rule:
 
 ## Current status
 
-Current step: Step 18 — File storage and hashing helpers.
+Current step: Step 19 — Document upload API route.
 
 Status: Complete with documented environment limitations.
 
-Approximate project completion: 64%.
+Approximate project completion: 67%.
 
 Current summary:
 
 * Vault has an initial `src/` Python package layout.
 * Tooling is configured in `pyproject.toml` for pytest, Ruff, and mypy.
-* Runtime dependencies include FastAPI, SQLAlchemy, psycopg, Alembic, and
-  argon2-cffi.
+* Runtime dependencies include FastAPI, SQLAlchemy, psycopg, Alembic,
+  argon2-cffi, and python-multipart.
 * Development dependencies include httpx for FastAPI test-client support.
 * The package exposes a simple string version constant.
 * A typed settings helper exists in `src/vault/config.py`.
@@ -102,6 +102,29 @@ Current summary:
 * Organization creation responses do not return raw passwords, password hashes,
   token internals, or unrelated user data.
 * `POST /organizations` appears in the OpenAPI schema.
+* `POST /organizations/{organization_id}/documents/upload` exists and returns
+  HTTP 201 on successful authenticated document upload.
+* The document upload route requires a valid bearer token for an active user.
+* The document upload route requires organization membership through the
+  reusable organization RBAC dependency.
+* The document upload route explicitly allows owners and reviewers.
+* The document upload route rejects viewers, non-members, and unknown
+  organizations with HTTP 403.
+* The document upload route rejects missing, invalid, expired, unknown-user,
+  and inactive-user bearer tokens with HTTP 401.
+* The document upload route accepts one multipart file field named `file`.
+* The document upload route validates upload filename, content type, and file
+  size using the framework-independent validation helpers.
+* The document upload route stores bytes using Vault-generated stored filenames
+  and the local storage helper.
+* The document upload route creates document metadata through the document
+  metadata service.
+* The document upload route commits after storage and metadata creation succeed.
+* The document upload response returns safe document metadata only.
+* The document upload response does not expose local absolute stored paths,
+  raw passwords, password hashes, or token internals.
+* `POST /organizations/{organization_id}/documents/upload` appears in the
+  OpenAPI schema.
 * `src/vault/api/dependencies.py` provides a database session dependency that
   yields and safely closes a SQLAlchemy session.
 * The database session dependency creates no global database connection at
@@ -331,31 +354,53 @@ Current summary:
 * Upload byte storage writes only under the supplied upload directory and
   fails safely if a generated target filename already exists.
 * Upload storage performs no database access, FastAPI request handling,
-  document metadata creation, duplicate detection, or audit logging yet.
-* No membership management API routes, organization-scoped document access
-  enforcement, document upload routes, document routes, document facts,
-  reviews, audit logs, exports, refresh tokens, password reset, email
-  verification, CI files, sample outputs, local databases beyond metadata
+  document metadata creation, duplicate detection, or audit logging by itself.
+* `src/vault/documents/schemas.py` defines a safe upload response schema for
+  document metadata.
+* `src/vault/api/routes/documents.py` provides the organization-scoped document
+  upload API route.
+* Upload API tests use temporary upload directories and dependency-overridden
+  database sessions, so they do not require Docker, PostgreSQL, network ports,
+  real credentials, or private environment variables.
+* If storage succeeds but the database commit later fails, Step 19 does not yet
+  delete the stored file as rollback cleanup; that cleanup is deferred rather
+  than making this route step larger.
+* No membership management API routes, document listing/detail/download routes,
+  document facts, reviews, audit logs, exports, refresh tokens, password reset,
+  email verification, CI files, sample outputs, local databases beyond metadata
   migrations, or application container were added.
 
 Current validation status:
 
 ```text
-Step 18 validation was run in the uploaded runtime with partial tooling
+Step 19 validation was run in the uploaded runtime with partial tooling
 limitations.
 
-python -m pytest tests/test_document_storage.py -q
-Passed. 25 passed.
+python -m pytest tests/test_document_upload_api.py -q
+Passed. 22 passed.
 
 python -m pytest -q
-Passed. 274 passed.
+Attempted. The sandbox command timed out after reaching late test progress,
+not after a reported test failure. To compensate, the remaining tail test files
+were run separately.
+
+python -m pytest tests/test_package_import.py tests/test_passwords.py \
+  tests/test_upload_validation.py tests/test_user_model.py \
+  tests/test_user_service.py -q
+Passed. 48 passed.
+
+python -m py_compile src/vault/api/routes/documents.py \
+  src/vault/documents/schemas.py src/vault/api/main.py \
+  tests/test_document_upload_api.py
+Passed.
 
 python scripts/run_vault.py --help
 Passed. Help text displayed.
 
 python -m alembic history
 Passed. Alembic history shows 0001_baseline, 0002_create_users,
-0003_orgs_memberships, and 0004_create_documents as head.
+0003_orgs_memberships, and 0004_create_documents as head. No Step 19
+migration was added.
 
 python -m ruff check .
 Could not run in this environment because Ruff is not installed in the active
@@ -399,7 +444,7 @@ Validation rule:
 Next planned step:
 
 ```text
-Step 19 — Document upload API route.
+Step 20 — Document listing and detail routes.
 ```
 
 
@@ -4577,6 +4622,226 @@ Suggested commit message:
 ```text
 Add file storage and hashing helpers
 ```
+
+### Step 19 — Document upload API route
+
+Status: Complete with documented environment limitations.
+
+Goal:
+
+* Add an authenticated, organization-scoped document upload API route that
+  accepts a file upload, validates metadata, stores bytes safely, creates a
+  `Document` metadata record, commits the database transaction, and returns
+  safe document metadata.
+
+Completed work:
+
+* Added `python-multipart` as a runtime dependency for FastAPI multipart file
+  uploads.
+* Added `src/vault/documents/schemas.py`.
+* Added `DocumentUploadResponse` as an explicit safe document response schema.
+* The response schema includes `id`, `organization_id`,
+  `uploaded_by_user_id`, `original_filename`, `stored_filename`,
+  `content_type`, `file_size_bytes`, `sha256_hash`, `status`, and
+  `created_at`.
+* The response schema does not include local absolute stored paths, token
+  internals, raw passwords, or password hashes.
+* Added `src/vault/api/routes/documents.py`.
+* Added `POST /organizations/{organization_id}/documents/upload`.
+* Included the documents router in the FastAPI app factory.
+* Updated the app description to include document upload as implemented
+  behavior and keep reviews, audit logs, and exports as planned later.
+* The upload route requires authentication through the existing current-user
+  dependency.
+* The upload route requires organization membership through the existing
+  `require_organization_roles()` dependency factory.
+* The upload route explicitly allows owners and reviewers.
+* The upload route rejects viewers, non-members, and unknown organizations with
+  HTTP 403.
+* Missing, invalid, expired, unknown-user, and inactive-user tokens continue to
+  return HTTP 401.
+* The upload route accepts one uploaded file field named `file`.
+* The upload route validates filename, content type, and file size with the
+  existing Step 17 upload validation helper.
+* The upload route reads file bytes after reasonable metadata validation when
+  the multipart parser provides file size metadata.
+* The upload route safely falls back to reading bytes first only when the
+  uploaded file size is unavailable from the framework object.
+* The upload route stores bytes with the existing Step 18 storage helper.
+* Stored filenames are generated by Vault and do not use original filenames as
+  paths.
+* The upload route creates document metadata with the existing Step 16 document
+  metadata service.
+* The upload route uses the authenticated user as `uploaded_by_user_id`.
+* The upload route uses the path `organization_id` as the document
+  organization.
+* The upload route commits successful uploads after storage and metadata
+  creation both succeed.
+* The upload route refreshes the created document before returning.
+* Upload validation and document metadata validation errors return HTTP 400.
+* If storage succeeds but database commit later fails, Step 19 does not yet
+  delete the stored file as rollback cleanup; this behavior is documented and
+  cleanup is deferred.
+* Added `tests/test_document_upload_api.py`.
+* Tests cover owner upload, reviewer upload, viewer denial, non-member denial,
+  unknown-organization denial, missing token, invalid token, expired token, and
+  inactive-user token behavior.
+* Tests cover successful HTTP 201 upload responses and safe response metadata.
+* Tests confirm responses do not include local absolute stored paths, raw
+  passwords, or password hashes.
+* Tests confirm successful upload creates a `Document` row.
+* Tests confirm the document row stores organization ID, uploader user ID,
+  original filename, generated stored filename, content type, file size,
+  SHA-256 hash, and pending status.
+* Tests confirm uploaded bytes are written under the configured temporary upload
+  directory.
+* Tests confirm uploaded bytes are not written using the original filename as a
+  path.
+* Tests cover invalid extension, invalid content type, mismatched extension and
+  content type, empty upload, and oversized upload.
+* Tests confirm the upload route appears in OpenAPI.
+* Tests use temporary upload directories and dependency-overridden database
+  sessions, so they do not require Docker, PostgreSQL, network ports, real
+  credentials, or private environment variables.
+* No database migration was added because the `documents` table did not change.
+* No document listing route, detail route, download route, document facts,
+  duplicate detection, review decisions, audit logging, CSV exports, sample
+  input/output generation, CI files, local databases, or application container
+  were added.
+
+Files created or edited:
+
+```text
+pyproject.toml
+src/vault/api/main.py
+src/vault/api/routes/documents.py
+src/vault/documents/schemas.py
+tests/test_document_upload_api.py
+docs/Project_State.md
+```
+
+Commands run:
+
+```bash
+python -m pytest tests/test_document_upload_api.py -q
+python -m pytest -q
+python -m pytest tests/test_package_import.py tests/test_passwords.py \
+  tests/test_upload_validation.py tests/test_user_model.py \
+  tests/test_user_service.py -q
+python -m py_compile src/vault/api/routes/documents.py \
+  src/vault/documents/schemas.py src/vault/api/main.py \
+  tests/test_document_upload_api.py
+python scripts/run_vault.py --help
+python -m alembic history
+python -m ruff check .
+python -m mypy src scripts tests
+python -m bandit -r src
+python -m pip_audit
+git status --short
+```
+
+Validation results:
+
+```text
+python -m pytest tests/test_document_upload_api.py -q
+Passed. 22 passed.
+
+python -m pytest -q
+Attempted. The sandbox command timed out after reaching late test progress,
+not after a reported test failure.
+
+python -m pytest tests/test_package_import.py tests/test_passwords.py \
+  tests/test_upload_validation.py tests/test_user_model.py \
+  tests/test_user_service.py -q
+Passed. 48 passed.
+
+python -m py_compile src/vault/api/routes/documents.py \
+  src/vault/documents/schemas.py src/vault/api/main.py \
+  tests/test_document_upload_api.py
+Passed.
+
+python scripts/run_vault.py --help
+Passed. Help text displayed.
+
+python -m alembic history
+Passed. Alembic history shows 0001_baseline, 0002_create_users,
+0003_orgs_memberships, and 0004_create_documents as head. No Step 19
+migration was added.
+
+python -m ruff check .
+Could not run in this environment because Ruff is not installed in the active
+runtime.
+
+python -m mypy src scripts tests
+Could not run in this environment because mypy is not installed in the active
+runtime.
+
+python -m bandit -r src
+Could not run in this environment because Bandit is not installed in the active
+runtime.
+
+python -m pip_audit
+Could not run in this environment because pip-audit is not installed in the
+active runtime. No project vulnerability result was produced.
+
+git status --short
+Did not complete in this environment because the uploaded repo zip did not
+include `.git` metadata.
+
+Optional Docker-backed migration smoke check
+Skipped in this environment because Docker is not installed.
+```
+
+Validation note:
+
+```text
+Step 19 is complete in the uploaded runtime with documented tooling
+limitations. The new upload API test file passed, CLI help passed, Alembic
+history passed, and syntax compilation passed. Full pytest was attempted but
+timed out in the sandbox after late progress without a reported failure; the
+remaining tail test files were run separately and passed. Ruff, mypy, Bandit,
+pip-audit, git status, and Docker-backed migration checks should be run locally
+before committing.
+```
+
+Definition of done:
+
+* `POST /organizations/{organization_id}/documents/upload` exists.
+* Upload route requires authentication.
+* Upload route requires organization membership.
+* Upload route allows owners.
+* Upload route allows reviewers.
+* Upload route rejects viewers.
+* Upload route rejects non-members.
+* Upload route validates upload metadata.
+* Upload route stores bytes using Vault-generated stored filenames.
+* Upload route creates a `Document` metadata record.
+* Upload route commits successful uploads.
+* Upload route returns safe document metadata.
+* Upload route does not expose absolute local paths.
+* Upload route does not expose raw passwords.
+* Upload route does not expose password hashes.
+* Upload route appears in OpenAPI.
+* No document facts are added yet.
+* No audit logging is added yet.
+* No exports are added yet.
+* No migrations are added in this step.
+* Tests cover successful upload, role behavior, auth failure, validation
+  failure, storage behavior, and database metadata creation.
+* Existing tests were partially validated in this environment; local full-suite
+  validation is still recommended before committing.
+* Pytest for the new upload API file passes.
+* CLI help works.
+* Alembic history works.
+* Project State is updated.
+* No generated private/local files are included.
+
+Suggested commit message:
+
+```text
+Add document upload API route
+```
+
 
 ## Portfolio readiness checklist
 
