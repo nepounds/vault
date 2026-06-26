@@ -37,11 +37,11 @@ Project-control rule:
 
 ## Current status
 
-Current step: Step 14 — Organization RBAC route dependency.
+Current step: Step 15 — Document metadata model and migration.
 
 Status: Complete with documented environment limitations.
 
-Approximate project completion: 51%.
+Approximate project completion: 55%.
 
 Current summary:
 
@@ -241,24 +241,66 @@ Current summary:
   `id`, `name`, `created_by_user_id`, and `created_at`.
 * `GET /organizations/{organization_id}` does not list members, expose unrelated
   users, or implement update/delete behavior.
+* `src/vault/documents/statuses.py` defines the official document status
+  values: `pending`, `approved`, `rejected`, and `needs_info`.
+* `src/vault/documents/models.py` defines the initial `Document` ORM model.
+* The `Document` model includes `id`, `organization_id`,
+  `uploaded_by_user_id`, `original_filename`, `stored_filename`,
+  `content_type`, `file_size_bytes`, `sha256_hash`, `status`, and
+  `created_at`.
+* Document IDs use UUID primary keys.
+* Document timestamps use the same UTC-aware application-side timestamp
+  default as the existing user, organization, and membership models.
+* Document metadata includes non-null constraints for all official fields.
+* Document metadata uses reasonable string lengths for filenames, content
+  type, SHA-256 hash, and status.
+* Documents are connected to organizations through a foreign key from
+  `documents.organization_id` to `organizations.id`.
+* Documents are connected to uploaders through a foreign key from
+  `documents.uploaded_by_user_id` to `users.id`.
+* Document status metadata includes a check constraint for `pending`,
+  `approved`, `rejected`, and `needs_info`.
+* Document status defaults to `pending` at the model level.
+* Document lookup indexes exist for organization lookup, organization/status
+  lookup, and SHA-256 duplicate-detection groundwork.
+* SHA-256 hash is indexed but not globally unique, so duplicate records can
+  still be stored later if duplicate detection needs them.
+* Shared SQLAlchemy model metadata imports `Document`, so Alembic target
+  metadata includes the `documents` table.
+* A create-documents migration exists at
+  `alembic/versions/0004_create_documents.py`.
+* The create-documents migration creates only the `documents` table and its
+  supporting indexes.
+* The create-documents migration downgrade drops only the `documents` table
+  after dropping its supporting indexes.
 * No membership management API routes, organization-scoped document access
-  enforcement, document uploads, document metadata, reviews, audit logs,
-  exports, refresh tokens, password reset, email verification, CI files, sample
-  outputs, local databases, migrations, or application container were added.
+  enforcement, document uploads, document routes, document facts, reviews,
+  audit logs, exports, refresh tokens, password reset, email verification, CI
+  files, sample outputs, local databases beyond metadata migrations, or
+  application container were added.
 
 Current validation status:
 
 ```text
-Step 14 validation was run in the uploaded runtime.
+Step 15 validation was run in the uploaded runtime.
+
+python -m pip install -e ".[dev]"
+Passed. Editable install completed with runtime and development dependencies.
+
+python -m ruff check .
+Initially reported one import-sort issue in src/vault/documents/models.py.
 
 python -m ruff check . --fix
+Fixed the import ordering issue.
+
+python -m ruff check .
 All checks passed.
 
 python -m mypy src scripts tests
-Success: no issues found in 44 source files.
+Success: no issues found in 48 source files.
 
 python -m pytest
-181 passed.
+197 passed.
 
 python -m bandit -r src
 No issues identified.
@@ -271,8 +313,8 @@ python scripts/run_vault.py --help
 Passed. Help text displayed.
 
 python -m alembic history
-Passed. Alembic history shows 0001_baseline, 0002_create_users, and
-0003_orgs_memberships as head. No Step 14 migration was added.
+Passed. Alembic history shows 0001_baseline, 0002_create_users,
+0003_orgs_memberships, and 0004_create_documents as head.
 
 docker --version
 Docker is not installed in this environment, so the optional Docker-backed
@@ -301,7 +343,7 @@ Validation rule:
 Next planned step:
 
 ```text
-Step 15 — Document metadata model and migration.
+Step 16 — Document metadata service.
 ```
 
 
@@ -3828,6 +3870,181 @@ Suggested commit message:
 
 ```text
 Add organization RBAC route dependency
+```
+
+
+### Step 15 — Document metadata model and migration
+
+Status: Complete with documented environment limitations.
+
+Goal:
+
+* Add the initial document metadata SQLAlchemy model and one Alembic migration
+  that creates the `documents` table, without adding upload behavior yet.
+
+Completed work:
+
+* Added `src/vault/documents/__init__.py`.
+* Added `src/vault/documents/statuses.py`.
+* Defined official document status values as `pending`, `approved`,
+  `rejected`, and `needs_info`.
+* Added `DocumentStatus` as a small `StrEnum`.
+* Added `STATUS_VALUES` as the explicit tuple of allowed document statuses.
+* Added `src/vault/documents/models.py`.
+* Added a typed SQLAlchemy 2-style `Document` ORM model.
+* Added the official document fields: `id`, `organization_id`,
+  `uploaded_by_user_id`, `original_filename`, `stored_filename`,
+  `content_type`, `file_size_bytes`, `sha256_hash`, `status`, and
+  `created_at`.
+* Used UUID primary keys for documents.
+* Used the existing UTC-aware timestamp helper for `Document.created_at`.
+* Added non-null constraints for all official document fields.
+* Added reasonable string lengths for original filename, stored filename,
+  content type, SHA-256 hash, and status.
+* Added a foreign key from `documents.organization_id` to `organizations.id`.
+* Added a foreign key from `documents.uploaded_by_user_id` to `users.id`.
+* Added a document status check constraint for the official status values.
+* Added a model-level default status of `pending`.
+* Added an organization lookup index for documents.
+* Added an organization/status lookup index for future review queues.
+* Added a non-unique SHA-256 hash index as duplicate-detection groundwork.
+* Did not force global SHA-256 uniqueness, because duplicate detection may need
+  to preserve duplicate document records later.
+* Updated `src/vault/models.py` so shared model metadata imports `Document`.
+* Confirmed Alembic target metadata includes `documents` through the shared
+  Vault model metadata path.
+* Added `alembic/versions/0004_create_documents.py`.
+* The new migration creates only the `documents` table and its supporting
+  indexes.
+* The migration downgrade drops only the `documents` table after dropping its
+  supporting indexes.
+* Updated Alembic tests to expect the new migration file.
+* Added tests for document table name, expected columns, column lengths,
+  non-nullability, UUID-style ID metadata, UTC-aware timestamp behavior,
+  official status values, default status, status check constraint, foreign keys,
+  lookup indexes, model metadata registration, migration creation behavior, and
+  migration downgrade behavior.
+* Existing Step 1 through Step 14 tests remain passing in this runtime.
+* No file upload route, upload service, file validation, safe stored filename
+  generation, file hashing behavior, document facts, control flags, duplicate
+  detection, review decisions, audit logging, CSV exports, sample outputs, CI
+  files, local databases, or application container were added.
+
+Files created or edited:
+
+```text
+src/vault/documents/__init__.py
+src/vault/documents/models.py
+src/vault/documents/statuses.py
+src/vault/models.py
+alembic/versions/0004_create_documents.py
+tests/test_document_model.py
+tests/test_alembic_config.py
+docs/Project_State.md
+```
+
+Commands run:
+
+```bash
+python -m pip install -e ".[dev]"
+python -m ruff check .
+python -m ruff check . --fix
+python -m ruff check .
+python -m mypy src scripts tests
+python -m pytest
+python -m bandit -r src
+python -m pip_audit
+python scripts/run_vault.py --help
+python -m alembic history
+docker --version
+git status --short
+```
+
+Validation results:
+
+```text
+python -m pip install -e ".[dev]"
+Passed. Editable install completed with runtime and development dependencies.
+
+python -m ruff check .
+Initially reported one import-sort issue in src/vault/documents/models.py.
+
+python -m ruff check . --fix
+Fixed the import ordering issue.
+
+python -m ruff check .
+All checks passed.
+
+python -m mypy src scripts tests
+Success: no issues found in 48 source files.
+
+python -m pytest
+197 passed.
+
+python -m bandit -r src
+No issues identified.
+
+python -m pip_audit
+Did not complete in this environment because pypi.org could not be resolved.
+No project vulnerability result was produced.
+
+python scripts/run_vault.py --help
+Passed. Help text displayed.
+
+python -m alembic history
+Passed. Alembic history shows 0001_baseline, 0002_create_users,
+0003_orgs_memberships, and 0004_create_documents as head.
+
+docker --version
+Docker is not installed in this environment, so the optional Docker-backed
+migration smoke check was skipped.
+
+git status --short
+Did not complete in this environment because the uploaded repo zip did not
+include `.git` metadata.
+```
+
+Validation note:
+
+```text
+Step 15 is complete in the uploaded runtime with the documented limitations.
+The offline code validation suite passed. pip-audit could not complete because
+this runtime could not resolve pypi.org. Docker-backed migration checks were
+skipped because Docker is not installed. git status could not run because the
+uploaded zip does not include .git metadata.
+```
+
+Definition of done:
+
+* `Document` ORM model exists.
+* Official document status values are defined.
+* Document model matches the Project State fields.
+* Foreign keys connect documents to organizations and users correctly.
+* New model is registered in shared Vault model metadata.
+* Alembic target metadata includes the new table.
+* A migration creates only the `documents` table.
+* The migration downgrade drops only the `documents` table.
+* No upload behavior is added yet.
+* No document routes are added yet.
+* No document facts are added yet.
+* No audit logging is added yet.
+* Tests cover model structure, status values, constraints, metadata, and
+  migration presence.
+* Existing tests still pass.
+* Ruff passes.
+* Mypy passes.
+* Pytest passes.
+* Bandit passes.
+* pip-audit was run and the DNS/network limitation is documented.
+* CLI help works.
+* Alembic history works.
+* Project State is updated.
+* No generated private/local files are included.
+
+Suggested commit message:
+
+```text
+Add document metadata model
 ```
 
 ## Portfolio readiness checklist
