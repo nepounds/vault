@@ -37,11 +37,11 @@ Project-control rule:
 
 ## Current status
 
-Current step: Step 15 — Document metadata model and migration.
+Current step: Step 16 — Document metadata service.
 
 Status: Complete with documented environment limitations.
 
-Approximate project completion: 55%.
+Approximate project completion: 58%.
 
 Current summary:
 
@@ -59,7 +59,8 @@ Current summary:
   secrets.
 * Custom Vault exceptions exist for base project errors, validation failures,
   duplicate user creation attempts, authentication failures, inactive-user
-  authentication attempts, and organization validation failures.
+  authentication attempts, organization validation failures, and document
+  metadata validation failures.
 * A minimal FastAPI app factory exists at `src/vault/api/main.py`.
 * The app is configured with the Vault title, honest description, and package
   version.
@@ -273,41 +274,43 @@ Current summary:
   supporting indexes.
 * The create-documents migration downgrade drops only the `documents` table
   after dropping its supporting indexes.
+* `src/vault/documents/service.py` provides typed document metadata
+  creation service behavior.
+* The document metadata service accepts a SQLAlchemy `Session`,
+  organization ID, uploader user ID, original filename, stored filename,
+  content type, file size, and SHA-256 hash.
+* Document metadata creation trims small surrounding whitespace from
+  metadata string fields only.
+* Document metadata creation rejects blank original filenames, blank stored
+  filenames, blank content types, blank SHA-256 hashes, malformed SHA-256
+  hashes, and non-positive file sizes.
+* SHA-256 hashes must be exactly 64 lowercase hexadecimal characters.
+* Document metadata creation stores the official `pending` status value.
+* Document metadata records are added to the supplied session and flushed so
+  generated IDs are available.
+* Document metadata creation does not commit automatically.
+* Document metadata creation performs no file reads, file writes, hash
+  calculation, safe filename generation, duplicate rejection, or membership
+  verification yet.
+* Duplicate SHA-256 hashes are still allowed because duplicate detection has
+  not been implemented yet.
 * No membership management API routes, organization-scoped document access
-  enforcement, document uploads, document routes, document facts, reviews,
-  audit logs, exports, refresh tokens, password reset, email verification, CI
-  files, sample outputs, local databases beyond metadata migrations, or
-  application container were added.
+  enforcement, document uploads, document routes, upload validation helpers,
+  document facts, reviews, audit logs, exports, refresh tokens, password
+  reset, email verification, CI files, sample outputs, local databases beyond
+  metadata migrations, or application container were added.
 
 Current validation status:
 
 ```text
-Step 15 validation was run in the uploaded runtime.
+Step 16 validation was run in the uploaded runtime with partial tooling
+limitations.
 
-python -m pip install -e ".[dev]"
-Passed. Editable install completed with runtime and development dependencies.
+python -m pytest tests/test_document_service.py -q
+Passed. 28 passed.
 
-python -m ruff check .
-Initially reported one import-sort issue in src/vault/documents/models.py.
-
-python -m ruff check . --fix
-Fixed the import ordering issue.
-
-python -m ruff check .
-All checks passed.
-
-python -m mypy src scripts tests
-Success: no issues found in 48 source files.
-
-python -m pytest
-197 passed.
-
-python -m bandit -r src
-No issues identified.
-
-python -m pip_audit
-Did not complete in this environment because pypi.org could not be resolved.
-No project vulnerability result was produced.
+python -m pytest -q
+Passed. 225 passed.
 
 python scripts/run_vault.py --help
 Passed. Help text displayed.
@@ -316,13 +319,28 @@ python -m alembic history
 Passed. Alembic history shows 0001_baseline, 0002_create_users,
 0003_orgs_memberships, and 0004_create_documents as head.
 
-docker --version
-Docker is not installed in this environment, so the optional Docker-backed
-migration smoke check was skipped.
+python -m ruff check .
+Could not run in this environment because Ruff is not installed in the active
+runtime.
+
+python -m mypy src scripts tests
+Could not run in this environment because mypy is not installed in the active
+runtime.
+
+python -m bandit -r src
+Could not run in this environment because Bandit is not installed in the active
+runtime.
+
+python -m pip_audit
+Could not run in this environment because pip-audit is not installed in the
+active runtime. No project vulnerability result was produced.
 
 git status --short
 Did not complete in this environment because the uploaded repo zip did not
 include `.git` metadata.
+
+Optional Docker-backed migration smoke check
+Skipped in this environment because Docker is not installed.
 ```
 
 Required validation commands:
@@ -343,7 +361,7 @@ Validation rule:
 Next planned step:
 
 ```text
-Step 16 — Document metadata service.
+Step 17 — Secure upload validation helpers.
 ```
 
 
@@ -4045,6 +4063,165 @@ Suggested commit message:
 
 ```text
 Add document metadata model
+```
+
+### Step 16 — Document metadata service
+
+Status: Complete with documented environment limitations.
+
+Goal:
+
+* Add a directly testable document metadata service that can create document
+  metadata records after upload validation has already happened, without adding
+  actual file upload handling yet.
+
+Completed work:
+
+* Added `src/vault/documents/service.py`.
+* Added typed `create_document_metadata()` service function.
+* The service accepts a SQLAlchemy `Session`.
+* The service accepts `organization_id`, `uploaded_by_user_id`,
+  `original_filename`, `stored_filename`, `content_type`, `file_size_bytes`,
+  and `sha256_hash`.
+* The service creates a `Document` metadata record.
+* The service sets status to the official `pending` document status value.
+* The service adds the document to the provided session.
+* The service flushes so the document ID is available to the caller.
+* The service does not commit automatically.
+* The service performs no file reads or writes.
+* The service does not calculate hashes yet.
+* The service trims surrounding whitespace from metadata string fields only.
+* The service rejects blank `original_filename` values.
+* The service rejects blank `stored_filename` values.
+* The service rejects blank `content_type` values.
+* The service rejects blank `sha256_hash` values.
+* The service rejects non-positive `file_size_bytes` values.
+* The service rejects malformed SHA-256 hashes.
+* SHA-256 hashes must be exactly 64 lowercase hexadecimal characters.
+* Duplicate SHA-256 hashes are allowed for now.
+* Organization membership is not verified in this service yet.
+* Added `DocumentError` and `DocumentValidationError` in
+  `src/vault/exceptions.py`.
+* Added `tests/test_document_service.py`.
+* Service tests use an isolated in-memory SQLite database only for unit tests.
+* Tests cover stored organization ID, uploader user ID, original filename,
+  stored filename, content type, file size, SHA-256 hash, default pending
+  status, generated ID after flush, no automatic commit, blank required string
+  rejection, malformed hash rejection, zero and negative file-size rejection,
+  duplicate-hash allowance, official pending status use, and no file creation
+  on disk.
+* Existing Step 1 through Step 15 tests remain passing in this runtime.
+* No upload route, multipart handling, upload validation helper, file type
+  validation, file extension validation, file size validation helper, safe
+  stored filename generation, hash calculation from bytes, document facts,
+  control flags, duplicate detection, review decisions, audit logging, CSV
+  exports, sample outputs, CI files, local databases, migrations, or
+  application container were added.
+
+Files created or edited:
+
+```text
+src/vault/documents/service.py
+src/vault/exceptions.py
+tests/test_document_service.py
+docs/Project_State.md
+```
+
+Commands run:
+
+```bash
+python -m pytest tests/test_document_service.py -q
+python -m pytest -q
+python scripts/run_vault.py --help
+python -m alembic history
+python -m ruff check .
+python -m mypy src scripts tests
+python -m bandit -r src
+python -m pip_audit
+git status --short
+```
+
+Validation results:
+
+```text
+python -m pytest tests/test_document_service.py -q
+28 passed.
+
+python -m pytest -q
+225 passed.
+
+python scripts/run_vault.py --help
+Passed. Help text displayed.
+
+python -m alembic history
+Passed. Alembic history shows 0001_baseline, 0002_create_users,
+0003_orgs_memberships, and 0004_create_documents as head.
+
+python -m ruff check .
+Could not run in this environment because Ruff is not installed in the active
+runtime.
+
+python -m mypy src scripts tests
+Could not run in this environment because mypy is not installed in the active
+runtime.
+
+python -m bandit -r src
+Could not run in this environment because Bandit is not installed in the active
+runtime.
+
+python -m pip_audit
+Could not run in this environment because pip-audit is not installed in the
+active runtime. No project vulnerability result was produced.
+
+git status --short
+Did not complete in this environment because the uploaded repo zip did not
+include `.git` metadata.
+
+Optional Docker-backed migration smoke check
+Skipped in this environment because Docker is not installed.
+```
+
+Validation note:
+
+```text
+Step 16 is complete in the uploaded runtime with documented tooling
+limitations. Pytest, CLI help, and Alembic history passed. Ruff, mypy, Bandit,
+pip-audit, git status, and Docker-backed migration checks should be run locally
+before committing.
+```
+
+Definition of done:
+
+* Document metadata creation service exists.
+* Service creates a `Document` record.
+* Service sets status to `pending`.
+* Service stores metadata fields.
+* Service validates obvious bad metadata.
+* Service rejects blank filenames, blank content type, blank hash, malformed
+  hash, and non-positive file size.
+* Service flushes so generated IDs are available.
+* Service does not commit automatically.
+* Service performs no file I/O.
+* Duplicate SHA-256 hashes are still allowed.
+* No upload route is added yet.
+* No upload validation helper is added yet.
+* No document facts are added yet.
+* No audit logging is added yet.
+* No migrations are added in this step.
+* Tests cover document metadata service behavior.
+* Existing tests still pass.
+* Pytest passes.
+* CLI help works.
+* Alembic history works.
+* Ruff, mypy, Bandit, and pip-audit need local validation because those tools
+  were unavailable in the uploaded runtime.
+* Project State is updated.
+* No generated private/local files are included.
+
+Suggested commit message:
+
+```text
+Add document metadata service
 ```
 
 ## Portfolio readiness checklist
