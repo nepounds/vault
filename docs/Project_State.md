@@ -37,11 +37,11 @@ Project-control rule:
 
 ## Current status
 
-Current step: Step 20 — Document listing and detail routes.
+Current step: Step 21 — Document facts model and migration.
 
 Status: Complete with documented environment limitations.
 
-Approximate project completion: 70%.
+Approximate project completion: 72%.
 
 Current summary:
 
@@ -386,60 +386,88 @@ Current summary:
   document metadata.
 * `src/vault/api/routes/documents.py` provides the organization-scoped
   document upload, listing, and detail API routes.
+* `src/vault/documents/models.py` defines the initial `DocumentFact` ORM model.
+* The `DocumentFact` model includes `id`, `document_id`, `vendor_name`,
+  `invoice_number`, `invoice_date`, `due_date`, `amount_cents`, `currency`,
+  `category`, `memo`, and `created_at`.
+* Document fact IDs use UUID primary keys.
+* Document fact timestamps use the same UTC-aware application-side timestamp
+  default as the existing user, organization, membership, and document models.
+* Document facts are connected to documents through a foreign key from
+  `document_facts.document_id` to `documents.id`.
+* Document fact metadata requires `document_id`, `vendor_name`,
+  `amount_cents`, `currency`, `category`, and `created_at`.
+* Document fact metadata allows nullable `invoice_number`, `invoice_date`,
+  `due_date`, and `memo`.
+* Document fact metadata uses reasonable string lengths for vendor name,
+  invoice number, currency, category, and memo.
+* Document fact currency defaults to `USD` at the model level.
+* Document fact metadata includes a positive amount check constraint.
+* Document fact metadata includes an uppercase three-letter currency check
+  constraint.
+* Document fact lookup indexes exist for document ID, vendor name, and invoice
+  number.
+* Document fact duplicate-detection groundwork exists as a non-unique composite
+  index on vendor name, invoice number, and amount cents.
+* Duplicate document facts are still allowed because duplicate detection has not
+  been implemented yet.
+* Shared SQLAlchemy model metadata imports `DocumentFact`, so Alembic target
+  metadata includes the `document_facts` table.
+* A create-document-facts migration exists at
+  `alembic/versions/0005_create_document_facts.py`.
+* The create-document-facts migration creates only the `document_facts` table
+  and its supporting indexes.
+* The create-document-facts migration downgrade drops only the
+  `document_facts` table after dropping its supporting indexes.
 * Upload API tests use temporary upload directories and dependency-overridden
   database sessions, so they do not require Docker, PostgreSQL, network ports,
   real credentials, or private environment variables.
 * If storage succeeds but the database commit later fails, Step 19 does not yet
   delete the stored file as rollback cleanup; that cleanup is deferred rather
   than making this route step larger.
-* No membership management API routes, document download routes, document
-  facts, reviews, audit logs, exports, refresh tokens, password reset, email
+* No membership management API routes, document download routes, document facts
+  service, document facts API routes, control flags, duplicate detection,
+  reviews, audit logs, exports, refresh tokens, password reset, email
   verification, CI files, sample outputs, local databases beyond metadata
   migrations, or application container were added.
 
 Current validation status:
 
 ```text
-Step 20 validation was run in the uploaded runtime with partial tooling
+Step 21 validation was run in the uploaded runtime with partial tooling
 limitations.
 
-python -m pytest tests/test_document_service.py tests/test_document_read_api.py -q
-Passed. 62 passed.
+python -m pytest tests/test_document_fact_model.py tests/test_alembic_config.py -q
+Passed. 35 passed.
 
 python -m pytest -q
 Attempted. The sandbox command timed out after mid-suite progress, not after a
 reported test failure. To compensate, the suite was run in smaller groups.
 
-python -m pytest tests/test_document_storage.py \
-  tests/test_document_upload_api.py tests/test_organization_access_service.py -q
-Passed. 63 passed.
-
-python -m pytest tests/test_organization_create_api.py \
-  tests/test_organization_models.py -q
-Passed. 34 passed.
-
-python -m pytest tests/test_organization_rbac_dependency.py -q
-Passed. 20 passed.
+python -m pytest tests/test_document_fact_model.py tests/test_document_model.py \
+  tests/test_document_service.py tests/test_document_read_api.py \
+  tests/test_document_upload_api.py tests/test_document_storage.py -q
+Passed. 136 passed.
 
 python -m pytest tests/test_alembic_config.py tests/test_api_health.py \
-  tests/test_auth_login_api.py tests/test_auth_login_service.py \
+  tests/test_config.py tests/test_database_config.py tests/test_package_import.py -q
+Passed. 35 passed.
+
+python -m pytest tests/test_auth_login_api.py tests/test_auth_login_service.py \
   tests/test_auth_me_api.py tests/test_auth_registration_api.py \
-  tests/test_auth_tokens.py tests/test_config.py \
-  tests/test_current_user_dependency.py tests/test_database_config.py \
-  tests/test_document_model.py tests/test_document_read_api.py \
-  tests/test_document_service.py -q
-Passed. 154 passed.
+  tests/test_auth_tokens.py tests/test_current_user_dependency.py -q
+Passed. 51 passed.
 
-python -m pytest tests/test_organization_service.py \
-  tests/test_package_import.py tests/test_passwords.py \
-  tests/test_upload_validation.py tests/test_user_model.py \
+python -m pytest tests/test_organization_access_service.py \
+  tests/test_organization_create_api.py tests/test_organization_models.py \
+  tests/test_organization_rbac_dependency.py tests/test_organization_service.py \
+  tests/test_passwords.py tests/test_upload_validation.py tests/test_user_model.py \
   tests/test_user_service.py -q
-Passed. 59 passed.
+Passed. 125 passed.
 
-python -m py_compile src/vault/api/routes/documents.py \
-  src/vault/documents/schemas.py src/vault/documents/service.py \
-  src/vault/exceptions.py tests/test_document_read_api.py \
-  tests/test_document_service.py
+python -m py_compile src/vault/documents/models.py src/vault/models.py \
+  alembic/versions/0005_create_document_facts.py \
+  tests/test_document_fact_model.py tests/test_alembic_config.py
 Passed.
 
 python scripts/run_vault.py --help
@@ -447,8 +475,8 @@ Passed. Help text displayed.
 
 python -m alembic history
 Passed. Alembic history shows 0001_baseline, 0002_create_users,
-0003_orgs_memberships, and 0004_create_documents as head. No Step 20
-migration was added.
+0003_orgs_memberships, 0004_create_documents, and
+0005_create_document_facts as head.
 
 python -m ruff check .
 Could not run in this environment because Ruff is not installed in the active
@@ -492,7 +520,7 @@ Validation rule:
 Next planned step:
 
 ```text
-Step 21 — Document facts model and migration.
+Step 22 — Document facts service.
 ```
 
 
@@ -5130,6 +5158,202 @@ Suggested commit message:
 
 ```text
 Add document read API routes
+```
+
+
+### Step 21 — Document facts model and migration
+
+Status: Complete with documented environment limitations.
+
+Goal:
+
+* Add the initial structured `DocumentFact` SQLAlchemy model and one Alembic
+  migration that creates the `document_facts` table, without adding facts
+  service or API behavior yet.
+
+Completed work:
+
+* Added `DocumentFact` to `src/vault/documents/models.py`.
+* The model represents structured fake invoice or receipt facts linked to a
+  document.
+* Added the official document fact fields: `id`, `document_id`, `vendor_name`,
+  `invoice_number`, `invoice_date`, `due_date`, `amount_cents`, `currency`,
+  `category`, `memo`, and `created_at`.
+* Used UUID primary keys for document facts.
+* Used the existing UTC-aware timestamp helper for `created_at`.
+* Added a non-null foreign key from `document_facts.document_id` to
+  `documents.id`.
+* Kept `vendor_name`, `amount_cents`, `currency`, and `category` required.
+* Kept `invoice_number`, `invoice_date`, `due_date`, and `memo` optional.
+* Added reasonable string lengths for vendor name, invoice number, currency,
+  category, and memo.
+* Added a model-level default currency of `USD`.
+* Added a check constraint requiring `amount_cents` to be positive.
+* Added a check constraint requiring currency to be uppercase three-letter text.
+* Added lookup indexes for `document_id`, `vendor_name`, and `invoice_number`.
+* Added a non-unique composite index on vendor name, invoice number, and amount
+  cents for future duplicate detection.
+* Did not add a uniqueness constraint, so duplicate invoice facts remain
+  allowed.
+* Updated `src/vault/models.py` so shared model metadata imports
+  `DocumentFact`.
+* Added `alembic/versions/0005_create_document_facts.py`.
+* The migration creates only the `document_facts` table and its supporting
+  indexes.
+* The migration downgrade drops only the supporting indexes and
+  `document_facts` table.
+* Added `tests/test_document_fact_model.py`.
+* Updated `tests/test_alembic_config.py` for the new migration file and
+  Alembic target metadata.
+* Existing Step 1 through Step 20 behavior remains compatible in the tested
+  groups.
+* No document facts service, document facts API route, parsing, control flags,
+  duplicate detection behavior, review decisions, audit logging, exports,
+  sample output, CI files, local databases, or application container were
+  added.
+
+Files created or edited:
+
+```text
+src/vault/documents/models.py
+src/vault/models.py
+alembic/versions/0005_create_document_facts.py
+tests/test_document_fact_model.py
+tests/test_alembic_config.py
+docs/Project_State.md
+```
+
+Commands run:
+
+```bash
+python -m pytest tests/test_document_fact_model.py tests/test_alembic_config.py -q
+python -m pytest -q
+python -m pytest tests/test_document_fact_model.py tests/test_document_model.py \
+  tests/test_document_service.py tests/test_document_read_api.py \
+  tests/test_document_upload_api.py tests/test_document_storage.py -q
+python -m pytest tests/test_alembic_config.py tests/test_api_health.py \
+  tests/test_config.py tests/test_database_config.py tests/test_package_import.py -q
+python -m pytest tests/test_auth_login_api.py tests/test_auth_login_service.py \
+  tests/test_auth_me_api.py tests/test_auth_registration_api.py \
+  tests/test_auth_tokens.py tests/test_current_user_dependency.py -q
+python -m pytest tests/test_organization_access_service.py \
+  tests/test_organization_create_api.py tests/test_organization_models.py \
+  tests/test_organization_rbac_dependency.py tests/test_organization_service.py \
+  tests/test_passwords.py tests/test_upload_validation.py tests/test_user_model.py \
+  tests/test_user_service.py -q
+python -m py_compile src/vault/documents/models.py src/vault/models.py \
+  alembic/versions/0005_create_document_facts.py \
+  tests/test_document_fact_model.py tests/test_alembic_config.py
+python scripts/run_vault.py --help
+python -m alembic history
+python -m ruff check .
+python -m mypy src scripts tests
+python -m bandit -r src
+python -m pip_audit
+git status --short
+```
+
+Validation results:
+
+```text
+python -m pytest tests/test_document_fact_model.py tests/test_alembic_config.py -q
+Passed. 35 passed.
+
+python -m pytest -q
+Attempted. The sandbox command timed out after mid-suite progress, not after a
+reported test failure. The suite was then run in smaller groups.
+
+python -m pytest tests/test_document_fact_model.py tests/test_document_model.py \
+  tests/test_document_service.py tests/test_document_read_api.py \
+  tests/test_document_upload_api.py tests/test_document_storage.py -q
+Passed. 136 passed.
+
+python -m pytest tests/test_alembic_config.py tests/test_api_health.py \
+  tests/test_config.py tests/test_database_config.py tests/test_package_import.py -q
+Passed. 35 passed.
+
+python -m pytest tests/test_auth_login_api.py tests/test_auth_login_service.py \
+  tests/test_auth_me_api.py tests/test_auth_registration_api.py \
+  tests/test_auth_tokens.py tests/test_current_user_dependency.py -q
+Passed. 51 passed.
+
+python -m pytest tests/test_organization_access_service.py \
+  tests/test_organization_create_api.py tests/test_organization_models.py \
+  tests/test_organization_rbac_dependency.py tests/test_organization_service.py \
+  tests/test_passwords.py tests/test_upload_validation.py tests/test_user_model.py \
+  tests/test_user_service.py -q
+Passed. 125 passed.
+
+python -m py_compile src/vault/documents/models.py src/vault/models.py \
+  alembic/versions/0005_create_document_facts.py \
+  tests/test_document_fact_model.py tests/test_alembic_config.py
+Passed.
+
+python scripts/run_vault.py --help
+Passed. Help text displayed.
+
+python -m alembic history
+Passed. Alembic history shows 0005_create_document_facts as head.
+
+python -m ruff check .
+Could not run in this environment because Ruff is not installed in the active
+runtime.
+
+python -m mypy src scripts tests
+Could not run in this environment because mypy is not installed in the active
+runtime.
+
+python -m bandit -r src
+Could not run in this environment because Bandit is not installed in the active
+runtime.
+
+python -m pip_audit
+Could not run in this environment because pip-audit is not installed in the
+active runtime. No project vulnerability result was produced.
+
+git status --short
+Did not complete in this environment because the uploaded repo zip did not
+include `.git` metadata.
+
+Optional Docker-backed migration smoke check
+Skipped in this environment because Docker is not installed.
+```
+
+Definition of done:
+
+* `DocumentFact` ORM model exists.
+* `document_facts` table metadata matches Project State fields.
+* `document_id` links facts to documents.
+* Required fact fields are non-null.
+* Optional fact fields are nullable.
+* Positive amount constraint exists.
+* Currency metadata is constrained.
+* Useful lookup indexes exist.
+* Duplicate facts are still allowed.
+* Shared model metadata includes `document_facts`.
+* Alembic target metadata includes `document_facts`.
+* Migration `0005_create_document_facts.py` exists.
+* Migration creates only `document_facts` and supporting indexes.
+* Migration downgrade drops only `document_facts` and supporting indexes.
+* No facts service is added yet.
+* No facts API route is added yet.
+* No control flags are added yet.
+* No duplicate detection is added yet.
+* No audit logging is added yet.
+* No exports are added yet.
+* Tests cover model structure, constraints, indexes, metadata, and migration
+  presence.
+* Existing tests were validated in smaller groups due to sandbox timeout.
+* Pytest groups pass.
+* CLI help works.
+* Alembic history works.
+* Project State is updated.
+* No generated private/local files are included.
+
+Suggested commit message:
+
+```text
+Add document facts model
 ```
 
 

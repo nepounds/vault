@@ -1,13 +1,14 @@
-"""SQLAlchemy models for Vault document metadata."""
+"""SQLAlchemy models for Vault document metadata and facts."""
 
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from uuid import UUID
 
 from sqlalchemy import (
     CheckConstraint,
+    Date,
     DateTime,
     ForeignKey,
     Index,
@@ -63,6 +64,56 @@ class Document(Base):
         nullable=False,
         default=DocumentStatus.PENDING.value,
     )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utc_now,
+    )
+
+
+class DocumentFact(Base):
+    """Structured fake invoice or receipt facts linked to a document."""
+
+    __tablename__ = "document_facts"
+    __table_args__ = (
+        CheckConstraint("amount_cents > 0", name="ck_document_facts_amount_positive"),
+        CheckConstraint(
+            "length(currency) = 3 AND currency = upper(currency)",
+            name="ck_document_facts_currency_uppercase_3",
+        ),
+        Index("ix_document_facts_document_id", "document_id"),
+        Index("ix_document_facts_vendor_name", "vendor_name"),
+        Index("ix_document_facts_invoice_number", "invoice_number"),
+        Index(
+            "ix_document_facts_vendor_invoice_amount",
+            "vendor_name",
+            "invoice_number",
+            "amount_cents",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    document_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("documents.id"),
+        nullable=False,
+    )
+    vendor_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    invoice_number: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    invoice_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    currency: Mapped[str] = mapped_column(
+        String(3),
+        nullable=False,
+        default="USD",
+    )
+    category: Mapped[str] = mapped_column(String(120), nullable=False)
+    memo: Mapped[str | None] = mapped_column(String(500), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
