@@ -37,11 +37,11 @@ Project-control rule:
 
 ## Current status
 
-Current step: Step 32 — Audit entry model and migration.
+Current step: Step 33 — Audit entry service.
 
 Status: Complete with documented environment limitations.
 
-Approximate project completion: 94%.
+Approximate project completion: 95%.
 
 Current summary:
 
@@ -62,7 +62,8 @@ Current summary:
   authentication attempts, organization validation failures, document
   metadata validation failures, safe document-not-found behavior, document
   fact validation failures, safe document-fact-not-found behavior, control
-  flag validation failures, and safe control-flag-not-found behavior.
+  flag validation failures, safe control-flag-not-found behavior, audit
+  entry validation failures, and safe audit-entry-not-found behavior.
 * A minimal FastAPI app factory exists at `src/vault/api/main.py`.
 * The app is configured with the Vault title, honest description, and package
   version.
@@ -838,9 +839,46 @@ Current summary:
   its supporting indexes.
 * The create-audit-entries migration downgrade drops only the `audit_entries`
   table after dropping its supporting indexes.
-* No audit entry creation service, audit API route, export behavior, sample
-  output, CI file, or state-changing service audit wiring was added in Step
-  32.
+* `src/vault/audit/service.py` provides typed audit entry service behavior.
+* `create_audit_entry()` creates one `AuditEntry` record.
+* Audit entry creation accepts optional organization ID, optional actor user ID,
+  action, entity type, optional entity ID, summary, and optional metadata.
+* Audit entry creation trims action, entity type, and summary values.
+* Audit entry creation rejects blank action, blank entity type, and blank
+  summary values.
+* Audit entry creation rejects unsupported action values using the official
+  Step 32 action values.
+* Audit entry creation rejects unsupported entity type values using the official
+  Step 32 entity type values.
+* Audit entry creation stores an empty metadata object when metadata is omitted.
+* Audit entry creation rejects explicit null metadata and non-object metadata.
+* Audit entry creation copies caller-provided metadata into a plain dictionary.
+* Audit entry records are added to the supplied session and flushed so IDs are
+  available.
+* Audit entry creation does not commit automatically.
+* Audit entry creation allows nullable organization IDs for future account or
+  system events.
+* Audit entry creation allows nullable actor user IDs for future system events.
+* Audit entry creation allows nullable entity IDs.
+* `list_audit_entries()` returns only entries for the requested organization.
+* Audit entry organization listing excludes organization-null entries.
+* Audit entry organization listing is deterministic, newest first by
+  `created_at`, then `id`.
+* `list_audit_entries_for_entity()` scopes entries by entity type and entity ID.
+* `get_audit_entry()` scopes detail lookup by organization ID and audit entry
+  ID.
+* `require_audit_entry()` raises a safe custom exception when a scoped audit
+  entry is missing.
+* Audit entries from other organizations are not returned by organization-
+  scoped lookup.
+* Organization-null audit entries are not returned through organization-scoped
+  detail lookup.
+* Audit service behavior does not verify organization membership; future route
+  dependencies will own organization access.
+* Audit service tests use safe metadata examples that avoid raw passwords,
+  password hashes, bearer tokens, token payloads, and local absolute file paths.
+* No audit API route, export behavior, sample output, CI file, or state-changing
+  service audit wiring was added in Step 33.
 * No membership management API routes, document download routes, audit logs,
   exports, refresh tokens, password reset, email
   verification, CI files, sample outputs, local databases beyond metadata
@@ -849,23 +887,25 @@ Current summary:
 Current validation status:
 
 ```text
-Step 32 validation was run in the uploaded runtime with partial tooling
+Step 33 validation was run in the uploaded runtime with partial tooling
 limitations.
 
-python -m pytest tests/test_audit_entry_model.py tests/test_alembic_config.py -q
-Passed. 50 passed.
+python -m pytest tests/test_audit_entry_service.py -q
+Passed. 45 passed.
+
+python -m pytest tests/test_audit_entry_model.py tests/test_audit_entry_service.py tests/test_alembic_config.py -q
+Passed. 95 passed.
 
 python -m pytest -q
 Attempted. The sandbox command timed out after mid-suite progress, not after a
-reported test failure. Focused audit and Alembic coverage passed.
+reported test failure. The suite was then run in smaller focused groups.
 
-python -m pytest tests/test_alembic_config.py tests/test_api_health.py   tests/test_auth_login_api.py tests/test_auth_login_service.py   tests/test_auth_me_api.py tests/test_auth_registration_api.py -q
-Passed. 71 passed.
+Focused pytest groups
+Passed. All available test files were covered in smaller groups. The grouped
+runs passed with counts including 136, 114, 55, 40, 43, 79, 72, 54, 20, 45,
+and 83 passed.
 
-python -m pytest tests/test_auth_tokens.py tests/test_config.py   tests/test_control_flag_model.py tests/test_control_flag_service.py -q
-Passed. 65 passed.
-
-python -m py_compile src/vault/audit/__init__.py   src/vault/audit/actions.py src/vault/audit/entities.py   src/vault/audit/models.py src/vault/models.py   alembic/versions/0008_create_audit_entries.py   tests/test_audit_entry_model.py tests/test_alembic_config.py
+python -m py_compile src/vault/audit/service.py tests/test_audit_entry_service.py src/vault/exceptions.py
 Passed.
 
 python scripts/run_vault.py --help
@@ -874,7 +914,7 @@ Passed. Help text displayed.
 python -m alembic history
 Passed. Alembic history shows 0008_create_audit_entries as head.
 
-Python line-length check for Step 32 edited Python files
+Python line-length check for Step 33 edited Python files
 Passed. No lines over 88 characters were found.
 
 python -m ruff check .
@@ -920,9 +960,213 @@ Validation rule:
 Next planned step:
 
 ```text
-Step 33 — Audit entry service.
+Step 34 — Wire audit entries into state-changing services.
 ```
 
+
+
+### Step 33 — Audit entry service
+
+Status: Complete with documented environment limitations.
+
+Goal:
+
+* Add a directly testable audit entry service that can create, validate, list,
+  and retrieve audit entries, without adding audit API routes or wiring audit
+  entries into existing state-changing routes yet.
+
+Completed work:
+
+* Added `src/vault/audit/service.py`.
+* Added typed `create_audit_entry()` service behavior.
+* The service accepts a SQLAlchemy `Session`, optional organization ID,
+  optional actor user ID, action, entity type, optional entity ID, summary, and
+  optional metadata.
+* The service creates an `AuditEntry` record with the supplied audit data.
+* The service trims action, entity type, and summary values.
+* Blank actions are rejected.
+* Blank entity types are rejected.
+* Blank summaries are rejected.
+* Unsupported actions are rejected using the official Step 32 audit action
+  values.
+* Unsupported entity types are rejected using the official Step 32 audit entity
+  type values.
+* Omitted metadata stores an empty object.
+* Explicit null metadata is rejected.
+* Metadata lists, strings, numbers, booleans, and other non-object values are
+  rejected.
+* Caller-provided metadata is copied into a plain dictionary so later caller
+  mutations do not unexpectedly alter the audit entry object.
+* The created audit entry is added to the supplied session.
+* The service flushes so generated IDs are available.
+* The service does not commit automatically.
+* Nullable organization IDs are allowed for future account-level or system
+  events.
+* Nullable actor user IDs are allowed for future system events.
+* Nullable entity IDs are allowed.
+* Added typed `list_audit_entries()` helper.
+* Listing returns only audit entries for the requested organization.
+* Listing excludes organization-null audit entries.
+* Listing is deterministic, newest first by `created_at`, with `id` as a
+  tie-breaker.
+* Added typed `list_audit_entries_for_entity()` helper.
+* Entity listing scopes by entity type and entity ID.
+* Entity listing does not return entries for another entity type.
+* Entity listing does not return entries for another entity ID.
+* Added typed `get_audit_entry()` helper.
+* Detail lookup scopes by both organization ID and audit entry ID.
+* Added typed `require_audit_entry()` helper.
+* Required lookup raises `AuditEntryNotFoundError` when a scoped entry is
+  missing.
+* Audit entries from another organization are not returned by scoped lookup.
+* Organization-null audit entries are not returned by organization-scoped
+  detail lookup.
+* Added `AuditEntryValidationError` in `src/vault/exceptions.py`.
+* Added `AuditEntryNotFoundError` in `src/vault/exceptions.py`.
+* Added `tests/test_audit_entry_service.py`.
+* Tests cover creation, validation, metadata handling, nullable fields,
+  organization listing, entity listing, scoped detail lookup, safe not-found
+  behavior, no automatic commit, and safe metadata examples.
+* Existing Step 1 through Step 32 behavior remains compatible in the focused
+  tested groups.
+* No audit API routes, state-changing service audit wiring, CSV exports, sample
+  output, CI files, local databases, migrations, or application container were
+  added.
+
+Files created or edited:
+
+```text
+src/vault/audit/service.py
+src/vault/exceptions.py
+tests/test_audit_entry_service.py
+docs/Project_State.md
+```
+
+Commands run:
+
+```bash
+python -m pytest tests/test_audit_entry_service.py -q
+python -m pytest tests/test_audit_entry_model.py tests/test_audit_entry_service.py tests/test_alembic_config.py -q
+python -m pytest -q
+python -m pytest tests/test_alembic_config.py tests/test_api_health.py tests/test_audit_entry_model.py tests/test_audit_entry_service.py tests/test_auth_login_api.py tests/test_auth_login_service.py tests/test_auth_me_api.py tests/test_auth_registration_api.py -q
+python -m pytest tests/test_auth_tokens.py tests/test_config.py tests/test_control_flag_model.py tests/test_control_flag_service.py tests/test_control_flags_api.py tests/test_current_user_dependency.py -q
+python -m pytest tests/test_database_config.py tests/test_document_fact_model.py tests/test_document_fact_service.py -q
+python -m pytest tests/test_document_facts_api.py -q
+python -m pytest tests/test_document_model.py tests/test_document_read_api.py -q
+python -m pytest tests/test_document_service.py tests/test_document_storage.py tests/test_document_upload_api.py -q
+python -m pytest tests/test_duplicate_detection_api.py tests/test_duplicate_detection_service.py tests/test_organization_access_service.py -q
+python -m pytest tests/test_organization_create_api.py tests/test_organization_models.py tests/test_organization_rbac_dependency.py -q
+python -m pytest tests/test_organization_service.py tests/test_package_import.py tests/test_passwords.py -q
+python -m pytest tests/test_review_decision_api.py -q
+python -m pytest tests/test_review_decision_model.py tests/test_review_decision_service.py tests/test_upload_validation.py tests/test_user_model.py tests/test_user_service.py -q
+python -m py_compile src/vault/audit/service.py tests/test_audit_entry_service.py src/vault/exceptions.py
+python scripts/run_vault.py --help
+python -m alembic history
+python -m ruff check .
+python -m mypy src scripts tests
+python -m bandit -r src
+python -m pip_audit
+git status --short
+docker --version
+```
+
+Validation results:
+
+```text
+python -m pytest tests/test_audit_entry_service.py -q
+Passed. 45 passed.
+
+python -m pytest tests/test_audit_entry_model.py tests/test_audit_entry_service.py tests/test_alembic_config.py -q
+Passed. 95 passed.
+
+python -m pytest -q
+Attempted. The sandbox command timed out after mid-suite progress, not after a
+reported test failure. The suite was then run in smaller groups.
+
+Focused pytest groups
+Passed. All available test files were covered in smaller groups. The grouped
+runs passed with counts including 136, 114, 55, 40, 43, 79, 72, 54, 20, 45,
+and 83 passed.
+
+python -m py_compile ...
+Passed.
+
+python scripts/run_vault.py --help
+Passed. Help text displayed.
+
+python -m alembic history
+Passed. Alembic history shows 0008_create_audit_entries as head.
+
+Python line-length check for Step 33 edited Python files
+Passed. No lines over 88 characters were found.
+
+python -m ruff check .
+Could not run in this environment because Ruff is not installed in the active
+runtime.
+
+python -m mypy src scripts tests
+Could not run in this environment because mypy is not installed in the active
+runtime.
+
+python -m bandit -r src
+Could not run in this environment because Bandit is not installed in the active
+runtime.
+
+python -m pip_audit
+Could not run in this environment because pip-audit is not installed in the
+active runtime. No project vulnerability result was produced.
+
+git status --short
+Did not complete in this environment because the uploaded repo zip did not
+include `.git` metadata.
+
+Optional Docker-backed migration smoke check
+Skipped in this environment because Docker is not installed.
+```
+
+Definition of done:
+
+* Audit entry service exists.
+* Service creates an `AuditEntry` record.
+* Service validates required audit fields.
+* Service rejects blank action, entity type, and summary.
+* Service rejects unsupported action values.
+* Service rejects unsupported entity type values.
+* Service trims simple audit metadata strings.
+* Service stores empty metadata when metadata is omitted.
+* Service requires metadata to be object-like.
+* Service flushes so generated IDs are available.
+* Service does not commit automatically.
+* Service allows nullable organization ID.
+* Service allows nullable actor user ID.
+* Service allows nullable entity ID.
+* Audit listing helper exists.
+* Audit entity listing helper exists.
+* Audit detail helper exists.
+* Required audit helper exists.
+* Audit listing is scoped by organization ID.
+* Audit detail lookup is scoped by organization ID and audit entry ID.
+* Audit entries from another organization are not leaked.
+* Organization-null audit entries are not returned through organization-scoped
+  lookup.
+* No audit API route is added yet.
+* Existing state-changing services do not write audit entries yet.
+* No exports are added yet.
+* No migrations are added in this step.
+* Tests cover creation, validation, metadata handling, nullable fields,
+  listing, entity lookup, scoped detail lookup, and safe metadata examples.
+* Existing tests were validated in smaller groups due to sandbox timeout.
+* Focused pytest groups pass.
+* CLI help works.
+* Alembic history works.
+* Project State is updated.
+* No generated private/local files are included.
+
+Suggested commit message:
+
+```text
+Add audit entry service
+```
 
 
 ### Step 29 — Review decision model and migration

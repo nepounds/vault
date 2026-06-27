@@ -80,3 +80,10 @@ class ReviewDecisionValidationError(VaultError):
 class ReviewDecisionNotFoundError(VaultError):
     """Raised when requested review decision metadata cannot be found."""
 
+class AuditEntryValidationError(VaultError):
+    """Raised when audit entry data fails service validation."""
+
+
+class AuditEntryNotFoundError(VaultError):
+    """Raised when requested audit entry metadata cannot be found."""
+
