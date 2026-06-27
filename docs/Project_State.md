@@ -37,11 +37,11 @@ Project-control rule:
 
 ## Current status
 
-Current step: Step 35 — Audit API route.
+Current step: Step 36 — CSV export builders.
 
 Status: Complete with documented environment limitations.
 
-Approximate project completion: 97%.
+Approximate project completion: 98%.
 
 Current summary:
 
@@ -911,31 +911,51 @@ Current summary:
   workflows.
 * Step 35 adds audit API routes without adding exports, sample outputs, CI
   files, migrations, or README final polish.
-* No membership management API routes, document download routes, audit log
-  exports, refresh tokens, password reset, email verification, CI files, sample
+* Step 36 adds the `src/vault/exports/` package for CSV export builders.
+* Approved-documents, exception-report, and audit-log CSV builders return text
+  from in-memory buffers and do not write files.
+* Export row dataclasses exist for approved documents, exception reports, and
+  audit logs.
+* Database-backed export row helpers are scoped to one organization.
+* Approved-document export rows include approved documents only.
+* Approved-document export rows include structured fact fields where present.
+* Approved documents without facts are included with blank fact fields.
+* Exception-report export rows include same-organization control flags across
+  pending, rejected, needs-info, and approved document statuses.
+* Exception-report rows order blocker flags before warning flags before info
+  flags, then newest flags first.
+* Audit-log export rows include same-organization audit entries only.
+* Audit-log export rows exclude organization-null audit entries.
+* Audit-log metadata is serialized as stable JSON text with deterministic key
+  ordering.
+* Audit-log export metadata uses safe redaction for raw passwords, password
+  hashes, bearer tokens, token payloads, and local absolute stored paths.
+* Empty exports return header-only CSV text.
+* CSV escaping is delegated to the Python standard-library `csv` module.
+* No export API routes, sample output files, demo seed command, migrations, CI,
+  or README final polish were added in Step 36.
+* No membership management API routes, document download routes, export API
+  routes, refresh tokens, password reset, email verification, CI files, sample
   outputs, local databases beyond metadata migrations, or application container
   were added.
 
 Current validation status:
 
 ```text
-Step 35 validation was run in the uploaded runtime with partial tooling
+Step 36 validation was run in the uploaded runtime with partial tooling
 limitations.
 
-python -m pytest tests/test_audit_api.py -q
-Passed. 42 passed.
+python -m pytest tests/test_export_builders.py -q
+Passed. 9 passed.
 
-python -m pytest tests/test_audit_entry_service.py -q
-Passed. 49 passed.
-
-python -m pytest tests/test_audit_api.py tests/test_audit_entry_service.py -q
-Passed. 91 passed.
+python -m pytest tests/test_audit_entry_service.py tests/test_export_builders.py -q
+Passed. 58 passed.
 
 python -m pytest -q
 Attempted. The sandbox command timed out after mid-suite progress, not after a
-reported test failure. Focused Step 35 coverage passed.
+reported test failure. Focused Step 36 coverage passed.
 
-python -m py_compile src/vault/api/main.py src/vault/api/routes/audit.py src/vault/audit/schemas.py src/vault/audit/service.py tests/test_audit_api.py
+python -m py_compile src/vault/exports/__init__.py src/vault/exports/schemas.py src/vault/exports/builders.py src/vault/exports/service.py src/vault/audit/service.py tests/test_export_builders.py
 Passed.
 
 python scripts/run_vault.py --help
@@ -944,7 +964,7 @@ Passed. Help text displayed.
 python -m alembic history
 Passed. Alembic history shows 0008_create_audit_entries as head.
 
-Python line-length check for Step 35 edited Python files
+Python line-length check for Step 36 edited Python files
 Passed. No lines over 88 characters were found.
 
 python -m ruff check .
@@ -990,9 +1010,200 @@ Validation rule:
 Next planned step:
 
 ```text
-Step 36 — CSV export builders.
+Step 37 — Export API routes.
 ```
 
+
+
+### Step 36 — CSV export builders
+
+Status: Complete with documented environment limitations.
+
+Goal:
+
+* Add directly testable CSV export builder functions that produce approved
+  documents, exception reports, and audit log CSV text for one organization,
+  without adding API routes or writing sample output files yet.
+
+Completed work:
+
+* Added `src/vault/exports/__init__.py`.
+* Added `src/vault/exports/schemas.py`.
+* Added frozen dataclass row types for approved-document, exception-report,
+  and audit-log exports.
+* Added `src/vault/exports/builders.py`.
+* Added explicit stable header constants for approved-document,
+  exception-report, and audit-log CSV exports.
+* Added `build_approved_documents_csv()`.
+* Added `build_exceptions_report_csv()`.
+* Added `build_audit_log_csv()`.
+* CSV builders return CSV text only.
+* CSV builders use the Python standard-library `csv` module.
+* CSV builders use `io.StringIO` for in-memory output.
+* CSV builders do not import FastAPI.
+* CSV builders do not write files to disk.
+* Empty export builders return header-only CSV text.
+* CSV builders safely handle commas, quotes, and newlines through the `csv`
+  module.
+* Audit metadata JSON is serialized with deterministic key ordering and compact
+  separators.
+* Added `src/vault/exports/service.py`.
+* Added organization-scoped approved-document export row query behavior.
+* Approved-document export rows include approved documents only.
+* Approved-document export rows exclude pending, rejected, and needs-info
+  documents.
+* Approved-document export rows exclude documents from other organizations.
+* Approved-document export rows include structured fact fields where present.
+* Approved documents without facts are included with blank fact fields.
+* Approved-document rows are ordered newest document first, then by document ID,
+  then by oldest fact when multiple facts exist.
+* Added organization-scoped exception-report export row query behavior.
+* Exception-report rows include control flags for same-organization documents.
+* Exception-report rows include document ID, original filename, document status,
+  flag ID, flag type, severity, reason, and flag creation timestamp.
+* Exception-report rows exclude flags from other organizations.
+* Exception-report rows use deterministic severity ordering: blocker, warning,
+  info, then newest flag first.
+* Added organization-scoped audit-log export row query behavior.
+* Audit-log rows include same-organization audit entries only.
+* Audit-log rows exclude organization-null audit entries.
+* Audit-log rows exclude audit entries from other organizations.
+* Added reusable safe audit metadata redaction helper in
+  `src/vault/audit/service.py`.
+* Audit-log export metadata redacts raw passwords, password hashes, bearer
+  tokens, token payloads, and local absolute stored paths.
+* Export row queries do not create audit entries yet.
+* Added `tests/test_export_builders.py`.
+* Tests cover approved-document export headers, status filtering, organization
+  scoping, fact fields, blank fact fields, CSV escaping, and empty output.
+* Tests cover exception-report headers, flag fields, document status,
+  organization scoping, deterministic severity ordering, CSV escaping, and
+  empty output.
+* Tests cover audit-log headers, organization scoping, organization-null
+  exclusion, metadata JSON serialization, deterministic key ordering, redaction,
+  CSV escaping, and empty output.
+* Tests cover no file writes and no export audit-entry creation.
+* No export API routes, download endpoints, sample output files, demo seed
+  commands, migrations, CI files, README final polish, or table changes were
+  added.
+
+Files created or edited:
+
+```text
+src/vault/exports/__init__.py
+src/vault/exports/builders.py
+src/vault/exports/schemas.py
+src/vault/exports/service.py
+src/vault/audit/service.py
+tests/test_export_builders.py
+docs/Project_State.md
+```
+
+Commands run:
+
+```bash
+python -m pytest tests/test_export_builders.py -q
+python -m pytest tests/test_audit_entry_service.py tests/test_export_builders.py -q
+python -m pytest -q
+python -m py_compile src/vault/exports/__init__.py src/vault/exports/schemas.py src/vault/exports/builders.py src/vault/exports/service.py src/vault/audit/service.py tests/test_export_builders.py
+python scripts/run_vault.py --help
+python -m alembic history
+python -m ruff check .
+python -m mypy src scripts tests
+python -m bandit -r src
+python -m pip_audit
+git status --short
+docker --version
+```
+
+Validation results:
+
+```text
+python -m pytest tests/test_export_builders.py -q
+Passed. 9 passed.
+
+python -m pytest tests/test_audit_entry_service.py tests/test_export_builders.py -q
+Passed. 58 passed.
+
+python -m pytest -q
+Attempted. The sandbox command timed out after mid-suite progress, not after a
+reported test failure. Focused Step 36 coverage passed.
+
+python -m py_compile ...
+Passed.
+
+python scripts/run_vault.py --help
+Passed. Help text displayed.
+
+python -m alembic history
+Passed. Alembic history shows 0008_create_audit_entries as head.
+
+Python line-length check for Step 36 edited Python files
+Passed. No lines over 88 characters were found.
+
+python -m ruff check .
+Could not run in this environment because Ruff is not installed in the active
+runtime.
+
+python -m mypy src scripts tests
+Could not run in this environment because mypy is not installed in the active
+runtime.
+
+python -m bandit -r src
+Could not run in this environment because Bandit is not installed in the active
+runtime.
+
+python -m pip_audit
+Could not run in this environment because pip-audit is not installed in the
+active runtime. No project vulnerability result was produced.
+
+git status --short
+Did not complete in this environment because the uploaded repo zip did not
+include `.git` metadata.
+
+Optional Docker-backed migration smoke check
+Skipped in this environment because Docker is not installed.
+```
+
+Definition of done:
+
+* Exports package exists.
+* Approved-documents CSV builder exists.
+* Exception-report CSV builder exists.
+* Audit-log CSV builder exists.
+* Export builders return CSV text.
+* Export builders do not write files.
+* Approved-documents export is organization-scoped.
+* Approved-documents export includes approved documents only.
+* Approved-documents export includes stable headers.
+* Approved-documents export includes structured fact fields where available.
+* Approved documents without facts export with blank fact fields.
+* Exception-report export is organization-scoped.
+* Exception-report export includes control flags.
+* Exception-report export includes stable headers.
+* Audit-log export is organization-scoped.
+* Audit-log export excludes organization-null entries.
+* Audit-log export includes stable headers.
+* Audit metadata is serialized safely.
+* Audit metadata redaction is preserved.
+* Empty exports return headers.
+* CSV special characters are handled safely through the `csv` module.
+* Export row ordering is deterministic.
+* No export API routes are added yet.
+* No sample output files are generated yet.
+* No export audit entries are written yet.
+* No migrations are added in this step.
+* Focused Step 36 tests pass.
+* CLI help works.
+* Alembic history works.
+* Project State is updated.
+* No generated private/local files are included.
+
+Suggested commit message:
+
+```text
+Add CSV export builders
+```
 
 
 ### Step 35 — Audit API route

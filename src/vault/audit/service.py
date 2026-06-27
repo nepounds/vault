@@ -26,6 +26,82 @@ type AuditMetadata = Mapping[str, AuditMetadataValue]
 type AuditMetadataDict = dict[str, AuditMetadataValue]
 
 
+
+_REDACTED = "[redacted]"
+_SENSITIVE_KEY_PARTS = (
+    "password",
+    "password_hash",
+    "hash",
+    "authorization",
+    "bearer",
+    "token",
+    "token_payload",
+    "access_token",
+    "refresh_token",
+    "stored_path",
+    "absolute_path",
+    "local_path",
+    "file_path",
+)
+
+
+def sanitize_audit_metadata(metadata: object) -> AuditMetadataDict:
+    """Return audit metadata with risky values redacted for external output."""
+    if not isinstance(metadata, Mapping):
+        return {}
+
+    return {
+        str(key): _sanitize_metadata_value(str(key), value)
+        for key, value in metadata.items()
+    }
+
+
+def _sanitize_metadata_value(
+    key: str,
+    value: object,
+) -> AuditMetadataValue:
+    if _is_sensitive_key(key):
+        return _REDACTED
+
+    if isinstance(value, str):
+        if _is_sensitive_string(value):
+            return _REDACTED
+        return value
+
+    if isinstance(value, bool) or value is None:
+        return value
+
+    if isinstance(value, int | float):
+        return value
+
+    if isinstance(value, list):
+        return [_sanitize_metadata_value(key, item) for item in value]
+
+    if isinstance(value, Mapping):
+        return {
+            str(item_key): _sanitize_metadata_value(str(item_key), item_value)
+            for item_key, item_value in value.items()
+        }
+
+    return str(value)
+
+
+def _is_sensitive_key(key: str) -> bool:
+    normalized = key.lower()
+    return any(part in normalized for part in _SENSITIVE_KEY_PARTS)
+
+
+def _is_sensitive_string(value: str) -> bool:
+    normalized = value.lower().strip()
+    if normalized.startswith("bearer "):
+        return True
+    if "eyj" in normalized and "." in normalized:
+        return True
+    if len(value) >= 3 and value[1:3] in {":\\", ":/"}:
+        return value[0].isalpha()
+    return value.startswith("/")
+
+
 class _MetadataOmitted:
     """Sentinel for omitted audit metadata."""
 
