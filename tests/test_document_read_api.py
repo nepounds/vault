@@ -5,7 +5,6 @@ from __future__ import annotations
 import uuid
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
-from typing import cast
 
 import pytest
 from fastapi.testclient import TestClient
@@ -274,11 +273,11 @@ def list_as(
     setup: dict[str, object],
     user_key: str,
 ) -> Response:
-    response = client.get(
+    response: Response = client.get(
         list_url(organization_id_from(setup)),
         headers=auth_headers(token_for(setup, user_key)),
     )
-    return cast(Response, response)
+    return response
 
 
 def detail_as(
@@ -287,14 +286,14 @@ def detail_as(
     user_key: str,
     document_key: str = "newer_document",
 ) -> Response:
-    response = client.get(
+    response: Response = client.get(
         detail_url(
             organization_id_from(setup),
             document_id_from(setup, document_key),
         ),
         headers=auth_headers(token_for(setup, user_key)),
     )
-    return cast(Response, response)
+    return response
 
 
 def assert_safe_document_payload(payload: dict[str, object]) -> None:
@@ -360,7 +359,7 @@ def test_invalid_token_returns_unauthorized_for_list_route(
     client: TestClient,
     read_setup: dict[str, object],
 ) -> None:
-    response = client.get(
+    response: Response = client.get(
         list_url(organization_id_from(read_setup)),
         headers=auth_headers("not-a-valid-token"),
     )
@@ -381,7 +380,7 @@ def test_expired_token_returns_unauthorized_for_list_route(
         now=datetime(2026, 1, 1, tzinfo=UTC),
     )
 
-    response = client.get(
+    response: Response = client.get(
         list_url(organization_id_from(read_setup)),
         headers=auth_headers(token),
     )
@@ -526,7 +525,7 @@ def test_missing_token_returns_unauthorized_for_detail_route(
     client: TestClient,
     read_setup: dict[str, object],
 ) -> None:
-    response = client.get(
+    response: Response = client.get(
         detail_url(
             organization_id_from(read_setup),
             document_id_from(read_setup),
@@ -541,7 +540,7 @@ def test_invalid_token_returns_unauthorized_for_detail_route(
     client: TestClient,
     read_setup: dict[str, object],
 ) -> None:
-    response = client.get(
+    response: Response = client.get(
         detail_url(
             organization_id_from(read_setup),
             document_id_from(read_setup),
@@ -565,7 +564,7 @@ def test_expired_token_returns_unauthorized_for_detail_route(
         now=datetime(2026, 1, 1, tzinfo=UTC),
     )
 
-    response = client.get(
+    response: Response = client.get(
         detail_url(
             organization_id_from(read_setup),
             document_id_from(read_setup),
@@ -581,7 +580,7 @@ def test_detail_route_returns_not_found_for_missing_document(
     client: TestClient,
     read_setup: dict[str, object],
 ) -> None:
-    response = client.get(
+    response: Response = client.get(
         detail_url(organization_id_from(read_setup), uuid.uuid4()),
         headers=auth_headers(token_for(read_setup, "owner")),
     )
@@ -594,7 +593,7 @@ def test_detail_route_does_not_return_document_from_another_organization(
     client: TestClient,
     read_setup: dict[str, object],
 ) -> None:
-    response = client.get(
+    response: Response = client.get(
         detail_url(
             organization_id_from(read_setup),
             document_id_from(read_setup, "other_document"),

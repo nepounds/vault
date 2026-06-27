@@ -7,7 +7,6 @@ import uuid
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import cast
 
 import pytest
 from fastapi.testclient import TestClient
@@ -216,12 +215,12 @@ def upload_as(
     files: dict[str, tuple[str, bytes, str]] | None = None,
 ) -> Response:
     organization_id = organization_id_from(setup)
-    response = client.post(
+    response: Response = client.post(
         upload_url(organization_id),
         headers=auth_headers(token_for(setup, user_key)),
         files=csv_upload() if files is None else files,
     )
-    return cast(Response, response)
+    return response
 
 
 def latest_document(session: Session) -> Document:
@@ -272,7 +271,7 @@ def test_unknown_organization_is_rejected(
     client: TestClient,
     upload_setup: dict[str, object],
 ) -> None:
-    response = client.post(
+    response: Response = client.post(
         upload_url(uuid.uuid4()),
         headers=auth_headers(token_for(upload_setup, "owner")),
         files=csv_upload(),
@@ -285,7 +284,7 @@ def test_missing_token_returns_unauthorized(
     client: TestClient,
     upload_setup: dict[str, object],
 ) -> None:
-    response = client.post(
+    response: Response = client.post(
         upload_url(organization_id_from(upload_setup)),
         files=csv_upload(),
     )
@@ -298,7 +297,7 @@ def test_invalid_token_returns_unauthorized(
     client: TestClient,
     upload_setup: dict[str, object],
 ) -> None:
-    response = client.post(
+    response: Response = client.post(
         upload_url(organization_id_from(upload_setup)),
         headers=auth_headers("not-a-token"),
         files=csv_upload(),
@@ -320,7 +319,7 @@ def test_expired_token_returns_unauthorized(
         now=datetime(2026, 1, 1, tzinfo=UTC),
     )
 
-    response = client.post(
+    response: Response = client.post(
         upload_url(organization_id_from(upload_setup)),
         headers=auth_headers(token),
         files=csv_upload(),

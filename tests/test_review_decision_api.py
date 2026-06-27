@@ -300,14 +300,12 @@ def submit_review(
     reason: str = "Looks good.",
 ) -> Response:
     """Submit one review decision through the API."""
-    return cast(
-        Response,
-        client.post(
-            f"/organizations/{organization_id}/documents/{document_id}/review",
-            headers=auth_header(user),
-            json={"decision": decision, "reason": reason},
-        ),
+    response: Response = client.post(
+        f"/organizations/{organization_id}/documents/{document_id}/review",
+        headers=auth_header(user),
+        json={"decision": decision, "reason": reason},
     )
+    return response
 
 
 def list_reviews(
@@ -318,13 +316,11 @@ def list_reviews(
     user: User,
 ) -> Response:
     """List review decisions through the API."""
-    return cast(
-        Response,
-        client.get(
-            f"/organizations/{organization_id}/documents/{document_id}/reviews",
-            headers=auth_header(user),
-        ),
+    response: Response = client.get(
+        f"/organizations/{organization_id}/documents/{document_id}/reviews",
+        headers=auth_header(user),
     )
+    return response
 
 
 def read_review(
@@ -336,15 +332,13 @@ def read_review(
     user: User,
 ) -> Response:
     """Read review decision detail through the API."""
-    return cast(
-        Response,
-        client.get(
-            "/organizations/"
-            f"{organization_id}/documents/{document_id}/reviews/"
-            f"{review_decision_id}",
-            headers=auth_header(user),
-        ),
+    response: Response = client.get(
+        "/organizations/"
+        f"{organization_id}/documents/{document_id}/reviews/"
+        f"{review_decision_id}",
+        headers=auth_header(user),
     )
+    return response
 
 
 def test_owner_can_submit_approved_review_decision(
@@ -409,7 +403,7 @@ def test_missing_token_returns_401_for_submit(
     review_setup: dict[str, object],
 ) -> None:
     document = cast(Document, review_setup["no_review_document"])
-    response = client.post(
+    response: Response = client.post(
         "/organizations/"
         f"{review_setup['organization_id']}/documents/{document.id}/review",
         json={"decision": "approved", "reason": "Looks good."},
@@ -423,7 +417,7 @@ def test_invalid_token_returns_401_for_submit(
     review_setup: dict[str, object],
 ) -> None:
     document = cast(Document, review_setup["no_review_document"])
-    response = client.post(
+    response: Response = client.post(
         "/organizations/"
         f"{review_setup['organization_id']}/documents/{document.id}/review",
         headers={"Authorization": "Bearer not-a-valid-token"},
@@ -439,7 +433,7 @@ def test_expired_token_returns_401_for_submit(
 ) -> None:
     document = cast(Document, review_setup["no_review_document"])
     owner = cast(User, review_setup["owner"])
-    response = client.post(
+    response: Response = client.post(
         "/organizations/"
         f"{review_setup['organization_id']}/documents/{document.id}/review",
         headers=auth_header(owner, minutes=-1),

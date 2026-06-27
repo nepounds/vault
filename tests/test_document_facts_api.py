@@ -5,7 +5,6 @@ from __future__ import annotations
 import uuid
 from collections.abc import Iterator
 from datetime import UTC, date, datetime, timedelta
-from typing import cast
 
 import pytest
 from fastapi.testclient import TestClient
@@ -339,12 +338,12 @@ def create_as(
     payload: dict[str, object] | None = None,
     document_key: str = "document",
 ) -> Response:
-    response = client.post(
+    response: Response = client.post(
         facts_url(organization_id_from(setup), document_id_from(setup, document_key)),
         headers=auth_headers(token_for(setup, user_key)),
         json=valid_fact_payload() if payload is None else payload,
     )
-    return cast(Response, response)
+    return response
 
 
 def list_as(
@@ -353,11 +352,11 @@ def list_as(
     user_key: str,
     document_key: str = "document",
 ) -> Response:
-    response = client.get(
+    response: Response = client.get(
         facts_url(organization_id_from(setup), document_id_from(setup, document_key)),
         headers=auth_headers(token_for(setup, user_key)),
     )
-    return cast(Response, response)
+    return response
 
 
 def detail_as(
@@ -367,7 +366,7 @@ def detail_as(
     fact_key: str = "first_fact",
     document_key: str = "document",
 ) -> Response:
-    response = client.get(
+    response: Response = client.get(
         fact_detail_url(
             organization_id_from(setup),
             document_id_from(setup, document_key),
@@ -375,7 +374,7 @@ def detail_as(
         ),
         headers=auth_headers(token_for(setup, user_key)),
     )
-    return cast(Response, response)
+    return response
 
 
 def assert_safe_fact_payload(payload: dict[str, object]) -> None:
@@ -428,7 +427,7 @@ def test_missing_token_returns_unauthorized_for_create(
     client: TestClient,
     fact_setup: dict[str, object],
 ) -> None:
-    response = client.post(
+    response: Response = client.post(
         facts_url(organization_id_from(fact_setup), document_id_from(fact_setup)),
         json=valid_fact_payload(),
     )
@@ -441,7 +440,7 @@ def test_invalid_token_returns_unauthorized_for_create(
     client: TestClient,
     fact_setup: dict[str, object],
 ) -> None:
-    response = client.post(
+    response: Response = client.post(
         facts_url(organization_id_from(fact_setup), document_id_from(fact_setup)),
         headers=auth_headers("not-a-valid-token"),
         json=valid_fact_payload(),
@@ -462,7 +461,7 @@ def test_expired_token_returns_unauthorized_for_create(
         expires_delta=timedelta(minutes=-1),
         now=datetime(2026, 1, 1, tzinfo=UTC),
     )
-    response = client.post(
+    response: Response = client.post(
         facts_url(organization_id_from(fact_setup), document_id_from(fact_setup)),
         headers=auth_headers(token),
         json=valid_fact_payload(),
@@ -687,7 +686,7 @@ def test_missing_fact_detail_returns_not_found(
     client: TestClient,
     fact_setup: dict[str, object],
 ) -> None:
-    response = client.get(
+    response: Response = client.get(
         fact_detail_url(
             organization_id_from(fact_setup),
             document_id_from(fact_setup),
@@ -779,7 +778,7 @@ def test_missing_document_in_accessible_org_returns_safe_not_found(
     client: TestClient,
     fact_setup: dict[str, object],
 ) -> None:
-    response = client.get(
+    response: Response = client.get(
         facts_url(organization_id_from(fact_setup), uuid.uuid4()),
         headers=auth_headers(token_for(fact_setup, "owner")),
     )

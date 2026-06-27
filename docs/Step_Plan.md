@@ -1,479 +1,131 @@
 # Vault Step Plan
 
-Vault should be built in small, testable steps. Each step updates `docs/Project_State.md` before completion.
+Vault was built in small, testable backend steps. The MVP is now at the final polish stage.
 
-## Phase 0 — Planning
+## Completed phases
 
-### Step 0 — Planning docs
+### Phase 0 — Planning
 
-Create the initial planning files:
+- Step 0: planning docs, scope, architecture, and project-control rules.
 
-- `README.md`
-- `docs/Architecture.md`
-- `docs/Step_Plan.md`
-- `docs/Project_State.md`
+### Phase 1 — Foundation
 
-Definition of done:
+- Step 1: Python package skeleton and tooling baseline.
+- Step 2: FastAPI app shell and `/health`.
+- Step 3: typed database settings, SQLAlchemy helpers, and Docker Compose PostgreSQL baseline.
+- Step 4: Alembic infrastructure and baseline migration.
 
-- Project goal is clear.
-- MVP scope is clear.
-- Non-goals are clear.
-- Architecture direction is clear.
-- Validation commands are listed.
+### Phase 2 — Users, auth, and organizations
 
-Suggested commit:
+- Step 5: user model and migration.
+- Step 6: password hashing and user creation service.
+- Step 7: registration API route.
+- Step 8: login service and token foundation.
+- Step 9: current-user dependency and `GET /auth/me`.
+- Step 10: organization and membership models.
+- Step 11: organization creation service.
+- Step 12: organization creation API route.
+- Step 13: organization membership access helpers.
+- Step 14: reusable organization RBAC route dependency.
 
-```text
-Add Vault planning docs
-```
+### Phase 3 — Document intake
 
-## Phase 1 — Foundation
+- Step 15: document model and status values.
+- Step 16: document metadata service.
+- Step 17: upload validation helpers.
+- Step 18: local file storage and SHA-256 helpers.
+- Step 19: authenticated organization-scoped document upload.
+- Step 20: authenticated organization-scoped document reads.
+- Step 21: document facts model and migration.
+- Step 22: document facts service.
+- Step 23: document facts API routes.
 
-### Step 1 — Project skeleton and tooling
+### Phase 4 — Controls and review workflow
 
-Create:
+- Step 24: control flag values, model, and migration.
+- Step 25: control flag service behavior.
+- Step 26: control flag API routes.
+- Step 27: duplicate detection service behavior.
+- Step 28: duplicate detection API route.
+- Step 29: review decision model and migration.
+- Step 30: review decision service and document status transitions.
+- Step 31: review decision API routes.
 
-- `pyproject.toml`
-- `.gitignore`
-- `.env.example`
-- `src/vault/__init__.py`
-- `src/vault/config.py`
-- `src/vault/exceptions.py`
-- `scripts/__init__.py`
-- `scripts/run_vault.py`
-- `tests/test_package_import.py`
+### Phase 5 — Audit and exports
 
-Add development tools:
+- Step 32: audit action/entity values, model, and migration.
+- Step 33: audit entry service.
+- Step 34: audit entry creation wired into state-changing API workflows.
+- Step 35: audit list/detail API routes.
+- Step 36: CSV export builders and database-backed row helpers.
+- Step 37: authenticated organization-scoped export API routes.
+- Step 38: fake sample input/output and demo export command.
 
-- pytest
-- ruff
-- mypy
-- bandit
-- pip-audit if practical
+### Phase 6 — CI, docs, and final hardening
 
-Definition of done:
+- Step 39: CI workflow, honest README quickstart, final validation, and MVP completion status.
 
-- Package imports.
-- Tooling commands run or documented.
-- First smoke test passes.
+## Current status
 
-Suggested commit:
+Step 39 is the final MVP polish step. It does not add new product behavior. It adds CI, updates documentation to match implemented behavior, regenerates deterministic sample output, and records final validation results.
 
-```text
-Add project skeleton and tooling baseline
-```
+## Post-MVP backlog
 
-### Step 2 — FastAPI app shell
+Possible later work:
 
-Create:
+- watch the first GitHub Actions runs and fix any environment-only CI issues;
+- add a small dashboard or screenshots;
+- add member invitation and membership-management routes;
+- add document download routes;
+- add refresh tokens and password reset;
+- add rate limiting and stronger production auth hardening;
+- add OCR or AI extraction only after the backend workflow remains stable;
+- add cloud storage only after deployment is intentionally scoped.
 
-- `src/vault/api/main.py`
-- health route
-- root route
-- shared error handling
-- API smoke tests
-
-Definition of done:
-
-- FastAPI app imports.
-- `/health` returns OK.
-- Tests use FastAPI test client.
-
-Suggested commit:
-
-```text
-Add FastAPI app shell
-```
-
-### Step 3 — Docker Compose and database connection
-
-Create:
-
-- `docker-compose.yml`
-- database settings
-- SQLAlchemy engine/session helpers
-- database connection tests using isolated test database strategy
-
-Definition of done:
-
-- App can be configured for PostgreSQL.
-- Tests do not require private local paths.
-- `.env.example` documents required values.
-
-Suggested commit:
-
-```text
-Add database configuration
-```
-
-### Step 4 — Alembic migrations baseline
-
-Create:
-
-- Alembic config
-- migration environment
-- first empty migration or metadata-connected baseline
-
-Definition of done:
-
-- Migrations can run locally.
-- Project State documents migration commands.
-
-Suggested commit:
-
-```text
-Add migration baseline
-```
-
-## Phase 2 — Users, auth, and organizations
-
-### Step 5 — User model and password hashing
-
-Add:
-
-- user table/model
-- password hashing helpers
-- password verification tests
-- user creation service
-
-Definition of done:
-
-- Raw passwords are never stored.
-- Duplicate email handling is tested.
-
-Suggested commit:
-
-```text
-Add user model and password hashing
-```
-
-### Step 6 — Registration and login
-
-Add:
-
-- registration route
-- login route
-- token/session creation
-- current-user dependency
-- auth tests
-
-Definition of done:
-
-- Valid users can register and log in.
-- Invalid credentials fail safely.
-- Protected route rejects anonymous requests.
-
-Suggested commit:
-
-```text
-Add registration and login
-```
-
-### Step 7 — Organizations and memberships
-
-Add:
-
-- organization model
-- membership model
-- owner/reviewer/viewer roles
-- create organization service
-- membership tests
-
-Definition of done:
-
-- Creating an org creates owner membership.
-- Membership lookup is tested.
-
-Suggested commit:
-
-```text
-Add organizations and memberships
-```
-
-### Step 8 — Role-based authorization
-
-Add:
-
-- permission helper functions
-- route dependencies for org roles
-- tests proving viewers cannot mutate state
-- tests proving outsiders cannot access org data
-
-Definition of done:
-
-- Organization scoping is enforced in services.
-- Permission failures are clear.
-
-Suggested commit:
-
-```text
-Add role-based authorization
-```
-
-## Phase 3 — Document intake
-
-### Step 9 — Document model and metadata
-
-Add:
-
-- documents table/model
-- status enum
-- metadata schema
-- create document metadata service
-
-Definition of done:
-
-- Document records are scoped to organizations.
-- Status defaults to pending.
-
-Suggested commit:
-
-```text
-Add document metadata model
-```
-
-### Step 10 — Secure upload validation
-
-Add:
-
-- upload endpoint
-- file size validation
-- extension allowlist
-- detected content validation
-- safe stored filename generation
-- SHA-256 hash generation
-- upload tests
-
-Definition of done:
-
-- Bad file types fail.
-- Oversized files fail.
-- Filenames are not trusted.
-- Files are stored outside source tree.
-
-Suggested commit:
-
-```text
-Add secure document upload validation
-```
-
-### Step 11 — Structured document facts
-
-Add:
-
-- document facts model
-- fake invoice/receipt input schema
-- validation for amount/date/vendor/category
-- tests for bad accounting fields
-
-Definition of done:
-
-- Facts can be attached to pending documents.
-- Amounts use integer cents.
-- Invalid facts fail clearly.
-
-Suggested commit:
-
-```text
-Add structured document facts
-```
-
-## Phase 4 — Controls and review workflow
-
-### Step 12 — Accounting control flags
-
-Add:
-
-- control flag model
-- missing required field checks
-- amount threshold checks
-- unapproved vendor placeholder check
-- tests for generated flags
-
-Definition of done:
-
-- Control checks return reasoned flags.
-- Flag severity is consistent.
-
-Suggested commit:
-
-```text
-Add accounting control checks
-```
-
-### Step 13 — Duplicate detection
-
-Add duplicate checks using:
-
-- file hash
-- vendor + invoice number
-- vendor + amount + close date
-
-Definition of done:
-
-- Exact duplicates are flagged.
-- Near duplicates are flagged with explanation.
-- False-positive boundaries are tested.
-
-Suggested commit:
-
-```text
-Add duplicate document detection
-```
-
-### Step 14 — Review decisions
-
-Add:
-
-- review decision model
-- approve/reject/needs_info service
-- legal status transitions
-- required decision reason
-- role tests
-
-Definition of done:
-
-- Reviewers and owners can review.
-- Viewers cannot review.
-- Decisions create audit entries.
-
-Suggested commit:
-
-```text
-Add document review workflow
-```
-
-## Phase 5 — Audit and exports
-
-### Step 15 — Immutable audit log
-
-Add:
-
-- audit entry model
-- audit service
-- audit query route
-- audit tests for state-changing actions
-
-Definition of done:
-
-- Important actions write audit entries.
-- Audit entries are organization-scoped.
-- Normal services do not update existing audit rows.
-
-Suggested commit:
-
-```text
-Add immutable audit logging
-```
-
-### Step 16 — CSV exports
-
-Add:
-
-- approved documents export
-- exceptions report export
-- audit log export
-- sample outputs
-- export tests
-
-Definition of done:
-
-- Exports include fake sample data only.
-- Sample outputs are current.
-- Export commands/routes are tested.
-
-Suggested commit:
-
-```text
-Add CSV exports and sample outputs
-```
-
-## Phase 6 — CLI, docs, and CI
-
-### Step 17 — Thin CLI helper
-
-Add CLI commands for local demo workflows:
-
-- seed demo data
-- export reports
-- run control checks if useful
-
-Definition of done:
-
-- CLI calls services.
-- CLI does not own business logic.
-
-Suggested commit:
-
-```text
-Add local demo CLI
-```
-
-### Step 18 — CI workflow
-
-Add GitHub Actions CI:
+## Standard validation commands
 
 ```bash
 python -m ruff check .
 python -m mypy src scripts tests
 python -m pytest
 python -m bandit -r src
+python -m pip_audit
+git status
 ```
 
-Add pip-audit if dependency setup is stable enough.
+Smoke checks:
 
-Definition of done:
-
-- CI mirrors local validation.
-- README badge can be added after CI exists.
-
-Suggested commit:
-
-```text
-Add CI workflow
+```bash
+python scripts/run_vault.py --help
+python scripts/run_vault.py export-demo --output-dir examples/sample_output
+python -m alembic history
 ```
 
-### Step 19 — README quickstart and screenshots
+Optional Docker-backed migration smoke check:
 
-Polish docs after behavior exists:
-
-- quickstart
-- endpoint examples
-- demo user credentials for fake data
-- screenshots if UI exists
-- sample output explanation
-
-Definition of done:
-
-- A stranger can clone and run the happy path.
-- README does not claim unbuilt features.
-
-Suggested commit:
-
-```text
-Polish README quickstart
+```bash
+docker compose up -d db
+python -m alembic upgrade head
+python -m alembic current
+docker compose down
 ```
 
-### Step 20 — Final hardening cleanup
+## Final MVP definition of done
 
-Run and fix:
+- CI workflow exists and runs Ruff, mypy, pytest, Bandit, and pip-audit.
+- README is current and does not claim unimplemented behavior.
+- Architecture and step docs are not materially stale.
+- Demo sample outputs regenerate deterministically.
+- Sample outputs remain fake and safe.
+- Ruff, mypy, pytest, Bandit, and pip-audit pass locally or failures are documented honestly.
+- CLI help works.
+- Demo export command works.
+- Alembic history works.
+- Docker-backed migration check is run or clearly skipped.
+- Project State marks the MVP complete only after validation supports it.
 
-- Ruff
-- mypy
-- pytest
-- Bandit
-- pip-audit
-- sample-output drift review
-- git status review
-
-Definition of done:
-
-- Project State is marked complete.
-- Known limitations are documented honestly.
-- Final repo is portfolio-ready.
-
-Suggested commit:
+Suggested Step 39 commit:
 
 ```text
-Add final hardening cleanup
+Add CI and final README polish
 ```

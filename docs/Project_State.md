@@ -37,11 +37,13 @@ Project-control rule:
 
 ## Current status
 
-Current step: Step 38 — Sample input/output and demo export command.
+Current step: Step 39 — CI, README quickstart, and final hardening.
 
 Status: Complete with documented environment limitations.
 
-Approximate project completion: 99.5%.
+MVP status: Complete after local validation.
+
+Approximate project completion: 100%.
 
 Current summary:
 
@@ -975,27 +977,41 @@ Current summary:
 * No sample output files, demo seed command, migrations, CI, or README final
   polish were added in Step 37.
 * No membership management API routes, document download routes, refresh
-  tokens, password reset, email verification, CI files, sample outputs, local
+  tokens, password reset, email verification, sample outputs, local
   databases beyond metadata migrations, or application container were added.
+* Step 39 adds `.github/workflows/ci.yml`.
+* Step 39 CI uses `python -m pip_audit --skip-editable` for dependency audit.
+* Step 39 updates `README.md`, `docs/Architecture.md`, and
+  `docs/Step_Plan.md` to describe implemented behavior honestly.
+* Step 39 adds final hardening tests for CI, README, and stale-doc checks.
+* Step 39 regenerates deterministic fake sample output CSVs once.
+* GitHub Actions CI has been added but has not been observed green in the
+  GitHub repository UI from this environment.
 
 Current validation status:
 
 ```text
-Step 38 validation was run in the uploaded runtime with partial tooling
-limitations.
+Step 39 validation has now been run locally with one documented upstream
+warning and one expected editable-package audit skip.
 
-python -m pytest tests/test_demo_export_cli.py -q
-Passed. 14 passed.
+python -m ruff check .
+Passed. All checks passed.
 
-python -m pytest tests/test_demo_export_cli.py tests/test_export_builders.py -q
-Passed. 23 passed.
+python -m mypy src scripts tests
+Passed after test helper return annotations were fixed. Success: no issues
+found in 99 source files.
 
-python -m pytest -q
-Attempted. The sandbox command timed out after mid-suite progress, not after a
-reported test failure. Focused Step 38 coverage passed.
+python -m pytest
+Passed locally. 855 passed, 1 warning in 84.48 seconds. The warning was an
+upstream FastAPI/Starlette TestClient deprecation warning about httpx/httpx2,
+not a Vault behavior failure.
 
-python -m py_compile scripts/run_vault.py tests/test_demo_export_cli.py
-Passed.
+python -m bandit -r src
+Passed. No issues identified.
+
+python -m pip_audit --skip-editable
+Passed. No known vulnerabilities found. The local editable Vault package was
+skipped as expected because it is not an auditable third-party dependency.
 
 python scripts/run_vault.py --help
 Passed. Help text displayed and includes export-demo.
@@ -1006,32 +1022,21 @@ Passed. Wrote approved_documents.csv, exceptions_report.csv, and audit_log.csv.
 python -m alembic history
 Passed. Alembic history shows 0008_create_audit_entries as head.
 
-Python line-length check for Step 38 edited Python files
-Passed. No lines over 88 characters were found.
-
-python -m ruff check .
-Could not run in this environment because Ruff is not installed in the active
-runtime.
-
-python -m mypy src scripts tests
-Could not run in this environment because mypy is not installed in the active
-runtime.
-
-python -m bandit -r src
-Could not run in this environment because Bandit is not installed in the active
-runtime.
-
-python -m pip_audit
-Could not run in this environment because pip-audit is not installed in the
-active runtime. No project vulnerability result was produced.
-
-git status --short
-Did not complete in this environment because the uploaded repo zip did not
-include `.git` metadata.
-
 Optional Docker-backed migration smoke check
-Skipped in this environment because Docker is not installed.
+Passed locally after using the Docker Compose database credentials:
+postgresql+psycopg://vault_local:vault_local@localhost:5432/vault_local.
+`python -m alembic upgrade head` and `python -m alembic current` worked after
+the local database URL matched `docker compose config`.
 
+git status
+Pending local review after final documentation edits.
+
+git diff examples/sample_output
+Pending local review after final documentation edits.
+
+GitHub Actions CI status
+Workflow was added locally. CI has not been observed green in GitHub Actions
+yet. Do not claim CI is green until the repository UI shows a passing run.
 ```
 
 Required validation commands:
@@ -1041,7 +1046,7 @@ python -m ruff check .
 python -m mypy src scripts tests
 python -m pytest
 python -m bandit -r src
-python -m pip_audit
+python -m pip_audit --skip-editable
 git status
 ```
 
@@ -1052,11 +1057,202 @@ Validation rule:
 Next planned step:
 
 ```text
-Step 39 — CI, README quickstart, and final hardening.
+Post-MVP maintenance — monitor CI, fix reported issues, and consider optional dashboard polish.
 ```
 
 
 
+
+### Step 39 — CI, README quickstart, and final hardening
+
+Status: Complete with documented environment limitations.
+
+Goal:
+
+* Finish Vault as a portfolio-ready MVP by adding CI, polishing the README
+  quickstart honestly around implemented behavior, running final validation,
+  fixing real validation defects, and marking the MVP complete in Project
+  State.
+
+Completed work:
+
+* Added `.github/workflows/ci.yml`.
+* CI runs on `push` and `pull_request`.
+* CI uses Python 3.13.
+* CI installs the package with development dependencies.
+* CI runs Ruff, mypy, pytest, Bandit, and `pip-audit --skip-editable`.
+* CI does not require Docker, PostgreSQL, private environment variables, cloud
+  credentials, deployment credentials, or secrets.
+* Rewrote `README.md` so it describes the implemented MVP instead of the old
+  planning-only state.
+* README now includes the problem statement, implemented features, tech stack,
+  quickstart, local PostgreSQL setup, validation commands, demo export command,
+  sample input/output explanation, API overview, security notes, project
+  status, and honest limitations.
+* README now documents `python -m pip_audit --skip-editable` so the local
+  editable Vault package is skipped while third-party dependencies are audited.
+* README now shows the Docker Compose local PostgreSQL URL that matches the
+  resolved fake local credentials: `vault_local`, `vault_local`, and
+  `vault_local`.
+* Project State documents the upstream FastAPI/Starlette TestClient
+  deprecation warning as a non-blocking dependency warning rather than a Vault
+  behavior failure.
+* README documents that Docker Compose is for local PostgreSQL and that most
+  tests and demo exports do not require Docker.
+* README documents that sample data is fake.
+* README does not claim production readiness, real OCR, AI extraction, bank
+  integrations, real customer data, cloud deployment, or frontend behavior.
+* Updated `docs/Architecture.md` to match the implemented backend MVP.
+* Updated `docs/Step_Plan.md` to show completed phases, Step 39 status, and
+  post-MVP backlog.
+* Added `tests/test_final_project_hardening.py`.
+* Final hardening tests check the CI workflow commands, README MVP coverage,
+  and materially stale documentation markers.
+* Fixed real mypy failures caused by redundant `cast(Response, ...)` calls in
+  existing API tests under the active mypy version.
+* Regenerated deterministic fake sample output CSVs with the official demo
+  export command.
+* No product features were added.
+* No API routes were added.
+* No database models or migrations were added.
+* No sample output behavior was intentionally changed.
+
+Files created or edited:
+
+```text
+.github/workflows/ci.yml
+README.md
+docs/Architecture.md
+docs/Step_Plan.md
+docs/Project_State.md
+tests/test_final_project_hardening.py
+tests/test_audit_api.py
+tests/test_control_flags_api.py
+tests/test_document_facts_api.py
+tests/test_document_read_api.py
+tests/test_document_upload_api.py
+tests/test_duplicate_detection_api.py
+tests/test_review_decision_api.py
+examples/sample_output/approved_documents.csv
+examples/sample_output/exceptions_report.csv
+examples/sample_output/audit_log.csv
+```
+
+Commands run:
+
+```bash
+python -m pip install -e ".[dev]"
+python -m ruff check .
+python -m mypy src scripts tests
+python -m pytest
+python -m pytest tests/test_alembic_config.py tests/test_api_health.py tests/test_audit_api.py tests/test_audit_entry_model.py tests/test_audit_entry_service.py tests/test_auth_login_api.py tests/test_auth_login_service.py tests/test_auth_me_api.py tests/test_auth_registration_api.py tests/test_auth_tokens.py tests/test_config.py tests/test_control_flag_model.py tests/test_control_flag_service.py -q
+python -m pytest tests/test_control_flags_api.py -q
+python -m pytest tests/test_current_user_dependency.py tests/test_database_config.py tests/test_demo_export_cli.py tests/test_document_fact_model.py tests/test_document_fact_service.py -q
+python -m pytest tests/test_document_facts_api.py -q
+python -m pytest tests/test_document_model.py tests/test_document_read_api.py -q
+python -m pytest tests/test_document_service.py tests/test_document_storage.py tests/test_document_upload_api.py -q
+python -m pytest tests/test_duplicate_detection_api.py tests/test_duplicate_detection_service.py -q
+python -m pytest tests/test_export_api.py tests/test_export_builders.py tests/test_final_project_hardening.py -q
+python -m pytest tests/test_organization_access_service.py tests/test_organization_create_api.py tests/test_organization_models.py tests/test_organization_rbac_dependency.py tests/test_organization_service.py -q
+python -m pytest tests/test_package_import.py tests/test_passwords.py -q
+python -m pytest tests/test_review_decision_api.py -q
+python -m pytest tests/test_review_decision_model.py tests/test_review_decision_service.py -q
+python -m pytest tests/test_upload_validation.py tests/test_user_model.py tests/test_user_service.py -q
+python -m bandit -r src
+python -m pip_audit --skip-editable
+python scripts/run_vault.py --help
+python scripts/run_vault.py export-demo --output-dir examples/sample_output
+python -m alembic history
+docker --version
+git status --short
+git diff examples/sample_output
+```
+
+Validation results:
+
+```text
+python -m pip install -e ".[dev]"
+Passed. Editable install completed with runtime and development dependencies.
+
+python -m ruff check .
+Passed. All checks passed.
+
+python -m mypy src scripts tests
+Passed after test helper return annotations were fixed. Success: no issues
+found in 99 source files.
+
+python -m pytest
+Passed locally. 855 passed, 1 warning in 84.48 seconds. The warning was an
+upstream FastAPI/Starlette TestClient deprecation warning about httpx/httpx2,
+not a Vault behavior failure.
+
+python -m bandit -r src
+Passed. No issues identified.
+
+python -m pip_audit --skip-editable
+Passed. No known vulnerabilities found. The local editable Vault package was
+skipped as expected because it is not an auditable third-party dependency.
+
+python scripts/run_vault.py --help
+Passed. Help text displayed and includes export-demo.
+
+python scripts/run_vault.py export-demo --output-dir examples/sample_output
+Passed. Wrote approved_documents.csv, exceptions_report.csv, and audit_log.csv.
+
+python -m alembic history
+Passed. Alembic history shows 0008_create_audit_entries as head.
+
+Optional Docker-backed migration smoke check
+Passed locally after using the Docker Compose database credentials:
+postgresql+psycopg://vault_local:vault_local@localhost:5432/vault_local.
+`python -m alembic upgrade head` and `python -m alembic current` worked after
+the local database URL matched `docker compose config`.
+
+git status --short
+Pending local review after final documentation edits.
+
+git diff examples/sample_output
+Pending local review after final documentation edits.
+
+GitHub Actions CI
+Workflow was added locally. CI has not been observed green in GitHub Actions
+yet.
+```
+
+Definition of done:
+
+* GitHub Actions CI workflow exists.
+* CI workflow runs Ruff.
+* CI workflow runs mypy.
+* CI workflow runs pytest.
+* CI workflow runs Bandit.
+* CI workflow runs `pip-audit --skip-editable`.
+* README quickstart is current and honest.
+* README explains the project, features, tech stack, setup, validation, sample
+  data, demo export command, API overview, security notes, and limitations.
+* README does not claim unimplemented features.
+* Architecture and step docs are not materially stale.
+* Demo sample outputs regenerate deterministically.
+* Sample outputs remain fake and safe.
+* No real data, secrets, tokens, password hashes, local absolute paths, local
+  databases, generated upload storage, or PostgreSQL volume data are included.
+* Ruff passes.
+* Mypy passes.
+* Pytest passed locally: 855 passed with one upstream FastAPI/Starlette TestClient deprecation warning.
+* Bandit passes.
+* pip-audit passed locally with `--skip-editable`; no known vulnerabilities were found and the local editable package was skipped as expected.
+* CLI help works.
+* Demo export command works.
+* Alembic history works.
+* Optional Docker-backed migration smoke check passed locally after using the Docker Compose `vault_local` credentials.
+* Project State is updated.
+* MVP completion status is marked complete with documented limitations.
+
+Suggested commit message:
+
+```text
+Add CI and final README polish
+```
 
 ### Step 38 — Sample input/output and demo export command
 

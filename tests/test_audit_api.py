@@ -301,11 +301,11 @@ def list_audit(
     query: str = "",
 ) -> Response:
     """Request the audit list route as one user."""
-    response = client.get(
+    response: Response = client.get(
         f"/organizations/{setup.organization.id}/audit{query}",
         headers=auth_headers(user),
     )
-    return cast(Response, response)
+    return response
 
 
 def read_audit_detail(
@@ -315,11 +315,11 @@ def read_audit_detail(
     audit_entry_id: uuid.UUID,
 ) -> Response:
     """Request the audit detail route as one user."""
-    response = client.get(
+    response: Response = client.get(
         f"/organizations/{setup.organization.id}/audit/{audit_entry_id}",
         headers=auth_headers(user),
     )
-    return cast(Response, response)
+    return response
 
 
 def response_items(response: Response) -> list[dict[str, Any]]:
@@ -393,7 +393,7 @@ def test_invalid_token_returns_http_401_for_audit_listing(
     client: TestClient,
     audit_setup: AuditApiSetup,
 ) -> None:
-    response = client.get(
+    response: Response = client.get(
         f"/organizations/{audit_setup.organization.id}/audit",
         headers={"Authorization": "Bearer not-a-real-token"},
     )
@@ -405,7 +405,7 @@ def test_expired_token_returns_http_401_for_audit_listing(
     client: TestClient,
     audit_setup: AuditApiSetup,
 ) -> None:
-    response = client.get(
+    response: Response = client.get(
         f"/organizations/{audit_setup.organization.id}/audit",
         headers=auth_headers(audit_setup.owner, expired=True),
     )
@@ -417,7 +417,7 @@ def test_inactive_user_token_returns_http_401_for_audit_listing(
     client: TestClient,
     audit_setup: AuditApiSetup,
 ) -> None:
-    response = client.get(
+    response: Response = client.get(
         f"/organizations/{audit_setup.organization.id}/audit",
         headers=auth_headers(audit_setup.inactive_user),
     )
@@ -429,7 +429,7 @@ def test_unknown_organization_returns_existing_safe_http_403_behavior(
     client: TestClient,
     audit_setup: AuditApiSetup,
 ) -> None:
-    response = client.get(
+    response: Response = client.get(
         f"/organizations/{uuid.uuid4()}/audit",
         headers=auth_headers(audit_setup.owner),
     )

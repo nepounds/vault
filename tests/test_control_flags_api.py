@@ -5,7 +5,6 @@ from __future__ import annotations
 import uuid
 from collections.abc import Iterator
 from datetime import UTC, date, datetime, timedelta
-from typing import cast
 
 import pytest
 from fastapi.testclient import TestClient
@@ -385,14 +384,14 @@ def generate_as(
     user_key: str,
     document_key: str = "document",
 ) -> Response:
-    response = client.post(
+    response: Response = client.post(
         generate_url(
             organization_id_from(setup),
             document_id_from(setup, document_key),
         ),
         headers=auth_headers(token_for(setup, user_key)),
     )
-    return cast(Response, response)
+    return response
 
 
 def list_as(
@@ -401,11 +400,11 @@ def list_as(
     user_key: str,
     document_key: str = "flag_document",
 ) -> Response:
-    response = client.get(
+    response: Response = client.get(
         flags_url(organization_id_from(setup), document_id_from(setup, document_key)),
         headers=auth_headers(token_for(setup, user_key)),
     )
-    return cast(Response, response)
+    return response
 
 
 def detail_as(
@@ -415,7 +414,7 @@ def detail_as(
     flag_key: str = "blocker_flag",
     document_key: str = "flag_document",
 ) -> Response:
-    response = client.get(
+    response: Response = client.get(
         flag_detail_url(
             organization_id_from(setup),
             document_id_from(setup, document_key),
@@ -423,7 +422,7 @@ def detail_as(
         ),
         headers=auth_headers(token_for(setup, user_key)),
     )
-    return cast(Response, response)
+    return response
 
 
 def assert_safe_flag_payload(payload: dict[str, object]) -> None:
@@ -488,7 +487,7 @@ def test_missing_token_returns_unauthorized_for_generate(
     client: TestClient,
     flag_setup: dict[str, object],
 ) -> None:
-    response = client.post(
+    response: Response = client.post(
         generate_url(organization_id_from(flag_setup), document_id_from(flag_setup)),
     )
 
@@ -500,7 +499,7 @@ def test_invalid_token_returns_unauthorized_for_generate(
     client: TestClient,
     flag_setup: dict[str, object],
 ) -> None:
-    response = client.post(
+    response: Response = client.post(
         generate_url(organization_id_from(flag_setup), document_id_from(flag_setup)),
         headers=auth_headers("not-a-valid-token"),
     )
@@ -520,7 +519,7 @@ def test_expired_token_returns_unauthorized_for_generate(
         expires_delta=timedelta(minutes=-1),
         now=datetime(2026, 1, 1, tzinfo=UTC),
     )
-    response = client.post(
+    response: Response = client.post(
         generate_url(organization_id_from(flag_setup), document_id_from(flag_setup)),
         headers=auth_headers(token),
     )
@@ -543,7 +542,7 @@ def test_generation_verifies_document_belongs_to_path_organization(
     client: TestClient,
     flag_setup: dict[str, object],
 ) -> None:
-    response = client.post(
+    response: Response = client.post(
         generate_url(
             other_organization_id_from(flag_setup),
             document_id_from(flag_setup, "document"),
@@ -559,7 +558,7 @@ def test_generation_rejects_document_from_another_organization(
     client: TestClient,
     flag_setup: dict[str, object],
 ) -> None:
-    response = client.post(
+    response: Response = client.post(
         generate_url(
             organization_id_from(flag_setup),
             document_id_from(flag_setup, "other_document"),
@@ -795,7 +794,7 @@ def test_list_route_does_not_leak_flags_through_cross_org_document(
     client: TestClient,
     flag_setup: dict[str, object],
 ) -> None:
-    response = client.get(
+    response: Response = client.get(
         flags_url(
             organization_id_from(flag_setup),
             document_id_from(flag_setup, "other_document"),
@@ -876,7 +875,7 @@ def test_missing_control_flag_detail_returns_not_found(
     client: TestClient,
     flag_setup: dict[str, object],
 ) -> None:
-    response = client.get(
+    response: Response = client.get(
         flag_detail_url(
             organization_id_from(flag_setup),
             document_id_from(flag_setup, "flag_document"),

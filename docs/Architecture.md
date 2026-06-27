@@ -1,221 +1,149 @@
 # Vault Architecture
 
-Vault is a secure accounting document workflow web app.
+Vault is a FastAPI backend for a secure accounting document workflow MVP.
 
-The architecture goal is simple: keep business rules testable, keep web handlers thin, and make every state-changing action go through an official service layer that writes an audit log entry.
+The main rule is boring on purpose: keep routes thin, keep business rules in importable services, keep organization boundaries explicit, and record important state changes in audit entries.
 
-## Core design
+## Current implementation
 
-Vault uses a layered FastAPI application:
+Vault currently implements:
+
+- user registration, login, bearer tokens, and current-user lookup;
+- organizations, memberships, and owner/reviewer/viewer roles;
+- organization-scoped document upload, listing, and detail reads;
+- structured document facts for fake invoices/receipts;
+- accounting-control flags and duplicate detection;
+- review decisions and document status transitions;
+- audit entry creation plus organization-scoped audit reads;
+- CSV export builders and authenticated export API routes;
+- deterministic fake sample input/output data and a local demo export command;
+- GitHub Actions CI for linting, typing, tests, and security checks.
+
+## Layering
 
 ```text
 HTTP route
   -> request schema
-  -> service function
-  -> authorization check
-  -> domain validation
+  -> authentication dependency
+  -> organization role dependency
+  -> service/helper function
   -> database transaction
-  -> audit log entry
+  -> audit entry for important state changes
   -> response schema
 ```
 
-Routes should not own business rules. They should parse input, call services, and return responses.
+Routes should parse inputs, call services, commit or roll back a request, and return safe responses. They should not become junk drawers for business rules.
 
 ## Main modules
 
 ```text
 src/vault/
-├── api/              FastAPI app, routes, dependencies, error handlers
-├── auth/             password hashing, token/session logic, current-user dependency
-├── organizations/    organization creation, membership, role checks
-├── documents/        upload validation, metadata, document records
-├── reviews/          review queue, decisions, status transitions
-├── controls/         accounting-control checks and duplicate detection
-├── audit/            immutable audit log creation and queries
-├── exports/          CSV export builders
-├── config.py         settings and environment loading
-├── database.py       engine/session helpers
+├── api/              FastAPI app, routes, dependencies
+├── auth/             password hashing, tokens, user services, schemas
+├── organizations/    organization creation, memberships, role checks
+├── documents/        upload validation, storage, metadata, facts
+├── controls/         accounting-control flags and duplicate detection
+├── reviews/          review decisions and status transitions
+├── audit/            audit entry models, services, schemas, redaction
+├── exports/          CSV row schemas, builders, database row helpers
+├── config.py         safe local settings
+├── database.py       SQLAlchemy base, engine, and session helpers
 └── exceptions.py     custom project exceptions
 ```
 
-## Data model draft
+## Persistence
 
-### users
+Vault uses SQLAlchemy models and Alembic migrations. The app is designed for PostgreSQL, with Docker Compose included for local PostgreSQL work. Tests use isolated local database setup where practical and do not require Docker.
 
-| Field | Notes |
-|---|---|
-| id | UUID primary key |
-| email | unique, normalized |
-| password_hash | never store raw password |
-| full_name | display name |
-| is_active | disables login without deleting history |
-| created_at | UTC timestamp |
+The current tables are:
 
-### organizations
-
-| Field | Notes |
-|---|---|
-| id | UUID primary key |
-| name | company or workspace name |
-| created_by_user_id | owner who created it |
-| created_at | UTC timestamp |
-
-### organization_memberships
-
-| Field | Notes |
-|---|---|
-| id | UUID primary key |
-| organization_id | scoped org |
-| user_id | member user |
-| role | owner, reviewer, viewer |
-| created_at | UTC timestamp |
-
-### documents
-
-| Field | Notes |
-|---|---|
-| id | UUID primary key |
-| organization_id | tenant boundary |
-| uploaded_by_user_id | uploader |
-| original_filename | sanitized display name |
-| stored_filename | generated safe name |
-| content_type | detected/validated content type |
-| file_size_bytes | validated size |
-| sha256_hash | duplicate and integrity check |
-| status | pending, approved, rejected, needs_info |
-| created_at | UTC timestamp |
-
-### document_facts
-
-| Field | Notes |
-|---|---|
-| id | UUID primary key |
-| document_id | linked document |
-| vendor_name | fake/sample vendor |
-| invoice_number | optional but useful |
-| invoice_date | optional |
-| due_date | optional |
-| amount_cents | integer cents |
-| currency | default USD |
-| category | simple accounting category |
-| memo | optional note |
-
-### control_flags
-
-| Field | Notes |
-|---|---|
-| id | UUID primary key |
-| document_id | linked document |
-| flag_type | missing_vendor, duplicate_invoice, etc. |
-| severity | info, warning, blocker |
-| reason | plain-English reason |
-| created_at | UTC timestamp |
-
-### review_decisions
-
-| Field | Notes |
-|---|---|
-| id | UUID primary key |
-| document_id | linked document |
-| reviewer_user_id | decision maker |
-| decision | approved, rejected, needs_info |
-| reason | required explanation |
-| created_at | UTC timestamp |
-
-### audit_entries
-
-| Field | Notes |
-|---|---|
-| id | UUID primary key |
-| organization_id | scoped org, nullable for account-level events |
-| actor_user_id | user who acted, nullable for system actions |
-| action | short action name |
-| entity_type | document, organization, user, export |
-| entity_id | affected entity |
-| summary | human-readable summary |
-| metadata_json | structured details |
-| created_at | UTC timestamp |
+- `users`
+- `organizations`
+- `memberships`
+- `documents`
+- `document_facts`
+- `control_flags`
+- `review_decisions`
+- `audit_entries`
 
 ## Authorization model
 
-Vault is multi-organization from the start.
+Vault is multi-organization. Organization-scoped routes must prove membership before returning or changing data.
 
-Every organization-scoped query must filter by `organization_id`. Users must not access documents, reviews, exports, or audit entries from organizations where they are not members.
+Current role behavior:
 
-Role permissions:
+| Role | Upload | Create facts | Generate flags | Review | Export | Read audit |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| owner | yes | yes | yes | yes | yes | yes |
+| reviewer | yes | yes | yes | yes | yes | yes |
+| viewer | no | no | no | no | no | yes |
 
-| Role | Can upload | Can review | Can export | Can manage members |
-|---|---:|---:|---:|---:|
-| owner | yes | yes | yes | yes |
-| reviewer | yes | yes | yes | no |
-| viewer | no | no | yes/read-only | no |
+There are no membership-management routes in the MVP.
 
-## Security rules
+## Upload and storage design
 
-- Store passwords only as salted hashes.
-- Do not commit secrets.
-- Use `.env.example` for required settings.
-- Validate upload size before storing.
-- Validate extension and detected content type.
-- Generate stored filenames; do not trust user filenames.
-- Store files outside the source tree.
-- Enforce organization scoping in service functions.
-- Keep audit entries append-only through normal application services.
-- Avoid raw SQL unless necessary.
-- If raw SQL is used, parameterize values and allowlist identifiers.
+Uploaded filenames are display labels only. Vault validates file metadata, generates stored filenames, stores bytes under the configured upload directory, and stores document metadata in the database.
 
-## Audit rule
+Allowed MVP file extensions are:
 
-If a service changes important state, it must write an audit entry in the same database transaction.
+```text
+.csv
+.txt
+.pdf
+```
 
-Examples:
+The committed examples use fake text files and fake invoice facts. The demo export command does not read real uploads.
 
-- user registered
-- organization created
-- member invited or role changed
-- document uploaded
-- document facts parsed
-- control flags generated
-- document approved
-- document rejected
-- export generated
+## Audit design
+
+Important state-changing API workflows create safe audit entries in the same request session before commit. Audit metadata avoids raw passwords, password hashes, bearer tokens, token payloads, and local absolute stored paths.
+
+Read-only audit routes do not create audit entries.
 
 ## Export design
 
-Vault should export only fake/sample approved records for the repo examples.
+Export builders return CSV text from in-memory buffers. API export routes return downloadable CSV responses and write `export_generated` audit entries for successful exports.
 
-Planned exports:
+Implemented export files:
 
 ```text
-examples/sample_output/approved_documents.csv
-examples/sample_output/exceptions_report.csv
-examples/sample_output/audit_log.csv
+approved_documents.csv
+exceptions_report.csv
+audit_log.csv
 ```
 
-Export builders should return plain rows/data structures before writing files. This keeps them easy to test.
+The local demo command writes deterministic fake sample outputs:
 
-## Testing strategy
+```text
+python scripts/run_vault.py export-demo --output-dir examples/sample_output
+```
 
-Tests should cover:
+## Validation strategy
 
-- model validation,
-- password hashing behavior,
-- auth-protected routes,
-- role-based access control,
-- organization scoping,
-- upload validation,
-- duplicate detection,
-- status transitions,
-- audit logging,
-- CSV export output,
-- and error handling.
+Required checks:
 
-Security-sensitive tests should prove users cannot access another organization's documents.
+```bash
+python -m ruff check .
+python -m mypy src scripts tests
+python -m pytest
+python -m bandit -r src
+python -m pip_audit
+```
 
-## Accepted tradeoffs for MVP
+Additional smoke checks:
 
-- Local file storage instead of S3.
-- Structured sample invoice data instead of OCR.
-- FastAPI docs as the first UI instead of React.
-- Docker Compose for local development only.
-- Fake data only.
+```bash
+python scripts/run_vault.py --help
+python scripts/run_vault.py export-demo --output-dir examples/sample_output
+python -m alembic history
+```
+
+CI runs the same core validation commands. GitHub Actions must be observed green before saying CI is green.
+
+## Accepted MVP tradeoffs
+
+- FastAPI OpenAPI docs are the MVP interface; no frontend is included.
+- Structured fake facts are used instead of OCR or AI extraction.
+- Local file storage is used instead of cloud object storage.
+- Docker Compose is for local PostgreSQL only, not deployment.
+- Sample output is committed as fake deterministic documentation, not customer data.
