@@ -16,6 +16,12 @@ from vault.api.dependencies import (
 )
 from vault.auth.models import User
 from vault.config import load_settings
+from vault.controls.schemas import ControlFlagResponse
+from vault.controls.service import (
+    generate_control_flags_for_document,
+    list_control_flags,
+    require_control_flag,
+)
 from vault.documents.schemas import (
     DocumentFactCreateRequest,
     DocumentFactResponse,
@@ -33,6 +39,7 @@ from vault.documents.service import (
 from vault.documents.storage import store_upload_bytes
 from vault.documents.validation import validate_upload_metadata
 from vault.exceptions import (
+    ControlFlagNotFoundError,
     DocumentFactNotFoundError,
     DocumentFactValidationError,
     DocumentNotFoundError,
@@ -223,6 +230,105 @@ def read_document_fact_detail(
         ) from exc
 
     return DocumentFactResponse.model_validate(fact)
+
+
+@router.post(
+    "/{organization_id}/documents/{document_id}/control-flags/generate",
+    response_model=list[ControlFlagResponse],
+)
+def generate_control_flags_route(
+    organization_id: UUID,
+    document_id: UUID,
+    session: Annotated[Session, Depends(get_database_session)],
+    _membership: UploadMembership,
+) -> list[ControlFlagResponse]:
+    """Generate safe control flags for an organization-scoped document."""
+    try:
+        document = require_document_for_organization(
+            session,
+            organization_id=organization_id,
+            document_id=document_id,
+        )
+        flags = generate_control_flags_for_document(
+            session,
+            document_id=document.id,
+        )
+        session.commit()
+        for flag in flags:
+            session.refresh(flag)
+    except DocumentNotFoundError as exc:
+        session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document was not found.",
+        ) from exc
+
+    return [ControlFlagResponse.model_validate(flag) for flag in flags]
+
+
+@router.get(
+    "/{organization_id}/documents/{document_id}/control-flags",
+    response_model=list[ControlFlagResponse],
+)
+def list_control_flags_route(
+    organization_id: UUID,
+    document_id: UUID,
+    session: Annotated[Session, Depends(get_database_session)],
+    _membership: ReadMembership,
+) -> list[ControlFlagResponse]:
+    """List safe control flag metadata for one document."""
+    try:
+        document = require_document_for_organization(
+            session,
+            organization_id=organization_id,
+            document_id=document_id,
+        )
+    except DocumentNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document was not found.",
+        ) from exc
+
+    flags = list_control_flags(session, document_id=document.id)
+
+    return [ControlFlagResponse.model_validate(flag) for flag in flags]
+
+
+@router.get(
+    "/{organization_id}/documents/{document_id}/control-flags/{flag_id}",
+    response_model=ControlFlagResponse,
+)
+def read_control_flag_detail(
+    organization_id: UUID,
+    document_id: UUID,
+    flag_id: UUID,
+    session: Annotated[Session, Depends(get_database_session)],
+    _membership: ReadMembership,
+) -> ControlFlagResponse:
+    """Return safe metadata for one document-scoped control flag."""
+    try:
+        document = require_document_for_organization(
+            session,
+            organization_id=organization_id,
+            document_id=document_id,
+        )
+        flag = require_control_flag(
+            session,
+            document_id=document.id,
+            flag_id=flag_id,
+        )
+    except DocumentNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document was not found.",
+        ) from exc
+    except ControlFlagNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Control flag was not found.",
+        ) from exc
+
+    return ControlFlagResponse.model_validate(flag)
 
 
 @router.post(

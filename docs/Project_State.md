@@ -37,11 +37,11 @@ Project-control rule:
 
 ## Current status
 
-Current step: Step 25 — Control flags service.
+Current step: Step 26 — Control flags API routes.
 
 Status: Complete with documented environment limitations.
 
-Approximate project completion: 82%.
+Approximate project completion: 84%.
 
 Current summary:
 
@@ -61,7 +61,8 @@ Current summary:
   duplicate user creation attempts, authentication failures, inactive-user
   authentication attempts, organization validation failures, document
   metadata validation failures, safe document-not-found behavior, document
-  fact validation failures, and safe document-fact-not-found behavior.
+  fact validation failures, safe document-fact-not-found behavior, control
+  flag validation failures, and safe control-flag-not-found behavior.
 * A minimal FastAPI app factory exists at `src/vault/api/main.py`.
 * The app is configured with the Vault title, honest description, and package
   version.
@@ -577,32 +578,79 @@ Current summary:
   its supporting indexes.
 * The create-control-flags migration downgrade drops only the
   `control_flags` table after dropping its supporting indexes.
-* No membership management API routes, document download routes, control flag
-  API routes, duplicate detection, reviews, audit logs, exports, refresh
-  tokens, password reset, email verification, CI files, sample outputs, local
-  databases beyond metadata migrations, or application container were added.
+* `src/vault/controls/schemas.py` defines safe control flag response metadata.
+* Control flag API responses include `id`, `document_id`, `flag_type`,
+  `severity`, `reason`, and `created_at`.
+* Control flag API responses do not include local absolute file paths, raw
+  passwords, password hashes, or token internals.
+* `POST /organizations/{organization_id}/documents/{document_id}/control-flags/generate`
+  exists and returns HTTP 200 with a list of generated flags.
+* Control flag generation returns an empty list with HTTP 200 when no flags are
+  generated.
+* `GET /organizations/{organization_id}/documents/{document_id}/control-flags`
+  exists and returns safe control flag metadata for one organization-scoped
+  document.
+* `GET /organizations/{organization_id}/documents/{document_id}/control-flags/{flag_id}`
+  exists and returns safe metadata for one organization-scoped control flag.
+* Control flag API routes require a valid bearer token for an active user.
+* Control flag API routes require organization membership through the reusable
+  organization RBAC dependency.
+* Control flag generation explicitly allows owners and reviewers.
+* Control flag generation rejects viewers, non-members, and unknown
+  organizations.
+* Control flag list and detail routes explicitly allow owners, reviewers, and
+  viewers.
+* Control flag list and detail routes reject non-members and unknown
+  organizations with the existing safe HTTP 403 organization-access behavior.
+* Missing, invalid, expired, unknown-user, and inactive-user bearer tokens
+  continue to return HTTP 401 before control flag route behavior runs.
+* Control flag routes verify the path document belongs to the path organization
+  before generating, listing, or reading control flags.
+* Documents from another organization are not accepted through control flag
+  routes, even when the document ID exists.
+* Missing documents in an accessible organization return HTTP 404 with a safe
+  public message.
+* Control flag generation calls `generate_control_flags_for_document()`.
+* Control flag listing calls `list_control_flags()`.
+* Control flag detail calls `require_control_flag()`.
+* Successful control flag generation commits and refreshes generated flags
+  before returning.
+* Control flag detail lookup is scoped by both document ID and flag ID.
+* Missing control flag detail returns HTTP 404 with a safe public message.
+* Flags from other documents or organizations are not leaked through list or
+  detail routes.
+* No membership management API routes, document download routes, duplicate
+  detection, reviews, audit logs, exports, refresh tokens, password reset,
+  email verification, CI files, sample outputs, local databases beyond metadata
+  migrations, or application container were added.
 
 Current validation status:
 
 ```text
-Step 25 validation was run in the uploaded runtime with partial tooling
+Step 26 validation was run in the uploaded runtime with partial tooling
 limitations.
 
-python -m pytest tests/test_control_flag_service.py -q
-Passed. 41 passed.
+python -m pytest tests/test_control_flags_api.py -q
+Passed. 42 passed.
 
-python -m pytest tests/test_control_flag_service.py \
-  tests/test_control_flag_model.py tests/test_alembic_config.py -q
-Passed. 79 passed.
+python -m pytest tests/test_control_flags_api.py \
+  tests/test_control_flag_service.py tests/test_control_flag_model.py \
+  tests/test_document_facts_api.py -q
+Passed. 137 passed.
 
 python -m pytest -q
 Attempted. The sandbox command timed out after mid-suite progress, not after a
 reported test failure. To compensate, the suite was run in smaller groups.
 
-python -m pytest tests/test_control_flag_service.py \
-  tests/test_control_flag_model.py tests/test_document_fact_service.py \
-  tests/test_document_fact_model.py tests/test_document_model.py -q
-Passed. 120 passed.
+python -m pytest tests/test_control_flags_api.py \
+  tests/test_control_flag_service.py tests/test_control_flag_model.py \
+  tests/test_alembic_config.py -q
+Passed. 121 passed.
+
+python -m pytest tests/test_document_fact_service.py \
+  tests/test_document_fact_model.py tests/test_document_facts_api.py \
+  tests/test_document_model.py -q
+Passed. 105 passed.
 
 python -m pytest tests/test_document_service.py tests/test_document_read_api.py \
   tests/test_document_upload_api.py tests/test_document_storage.py -q
@@ -621,18 +669,19 @@ python -m pytest tests/test_organization_access_service.py \
   tests/test_organization_create_api.py tests/test_organization_models.py \
   tests/test_organization_rbac_dependency.py tests/test_organization_service.py \
   tests/test_passwords.py tests/test_upload_validation.py tests/test_user_model.py \
-  tests/test_user_service.py tests/test_document_facts_api.py -q
-Passed. 165 passed.
+  tests/test_user_service.py -q
+Passed. 125 passed.
 
-python -m py_compile src/vault/controls/service.py src/vault/exceptions.py \
-  tests/test_control_flag_service.py
+python -m py_compile src/vault/api/routes/documents.py \
+  src/vault/controls/schemas.py src/vault/exceptions.py \
+  tests/test_control_flags_api.py
 Passed.
 
 python scripts/run_vault.py --help
 Passed. Help text displayed.
 
 python -m alembic history
-Passed. Alembic history shows 0006_create_control_flags as head. No Step 25
+Passed. Alembic history shows 0006_create_control_flags as head. No Step 26
 migration was added.
 
 python -m ruff check .
@@ -678,7 +727,7 @@ Validation rule:
 Next planned step:
 
 ```text
-Step 26 — Control flags API routes.
+Step 27 — Duplicate detection service.
 ```
 
 
@@ -6385,6 +6434,251 @@ Suggested commit message:
 ```text
 Add control flags service
 ```
+
+### Step 26 — Control flags API routes
+
+Status: Complete with documented environment limitations.
+
+Goal:
+
+* Add authenticated, organization-scoped control flag API routes that allow
+  owners and reviewers to generate control flags for an existing
+  organization-scoped document, and allow owners, reviewers, and viewers to
+  list/read safe control flag metadata.
+
+Completed work:
+
+* Added `src/vault/controls/schemas.py`.
+* Added `ControlFlagResponse` as a safe response schema.
+* Control flag responses include `id`, `document_id`, `flag_type`, `severity`,
+  `reason`, and `created_at`.
+* Control flag responses do not include local absolute file paths, raw
+  passwords, password hashes, or token internals.
+* Reused the existing documents router in `src/vault/api/routes/documents.py`.
+* Added
+  `POST /organizations/{organization_id}/documents/{document_id}/control-flags/generate`.
+* The generation route returns HTTP 200 consistently, including when no flags
+  are generated.
+* Added
+  `GET /organizations/{organization_id}/documents/{document_id}/control-flags`.
+* Added
+  `GET /organizations/{organization_id}/documents/{document_id}/control-flags/{flag_id}`.
+* All control flag routes require authentication.
+* All control flag routes require organization membership through
+  `require_organization_roles()`.
+* Control flag generation explicitly allows owners and reviewers.
+* Viewers cannot generate control flags.
+* Control flag list and detail routes explicitly allow owners, reviewers, and
+  viewers.
+* Non-members cannot generate, list, or read control flags.
+* Missing, invalid, expired, unknown-user, and inactive-user tokens continue to
+  return HTTP 401.
+* Unknown organizations continue to return the existing safe HTTP 403
+  organization-access behavior.
+* Control flag routes verify the path document belongs to the path organization
+  before generating, listing, or reading flags.
+* Documents from another organization are rejected with safe HTTP 404 behavior
+  when accessed through an otherwise accessible organization path.
+* Missing documents in an accessible organization return HTTP 404 with a safe
+  public message.
+* Control flag generation calls `generate_control_flags_for_document()`.
+* Control flag listing calls `list_control_flags()`.
+* Control flag detail calls `require_control_flag()`.
+* Successful control flag generation commits and refreshes generated flags
+  before returning.
+* Generated rows store document ID, flag type, severity, reason, ID, and
+  created timestamp.
+* Control flag listing is scoped to the requested document.
+* Control flag detail lookup is scoped by document ID and flag ID.
+* Missing control flag detail returns HTTP 404 with a safe public message.
+* Flags from other documents or organizations are not leaked.
+* Duplicate-file-hash flags are not generated yet.
+* Duplicate-invoice-attributes flags are not generated yet.
+* No database migrations were added.
+* No duplicate detection behavior, review workflow, document status
+  transitions, audit logging, exports, sample outputs, CI files, local
+  databases, or application container were added.
+* Added `tests/test_control_flags_api.py`.
+
+Files created or edited:
+
+```text
+src/vault/api/routes/documents.py
+src/vault/controls/schemas.py
+src/vault/exceptions.py
+tests/test_control_flags_api.py
+docs/Project_State.md
+```
+
+Commands run:
+
+```bash
+python -m pytest tests/test_control_flags_api.py -q
+python -m pytest tests/test_control_flags_api.py \
+  tests/test_control_flag_service.py tests/test_control_flag_model.py \
+  tests/test_document_facts_api.py -q
+python -m pytest -q
+python -m pytest tests/test_control_flags_api.py \
+  tests/test_control_flag_service.py tests/test_control_flag_model.py \
+  tests/test_alembic_config.py -q
+python -m pytest tests/test_document_fact_service.py \
+  tests/test_document_fact_model.py tests/test_document_facts_api.py \
+  tests/test_document_model.py -q
+python -m pytest tests/test_document_service.py tests/test_document_read_api.py \
+  tests/test_document_upload_api.py tests/test_document_storage.py -q
+python -m pytest tests/test_alembic_config.py tests/test_api_health.py \
+  tests/test_config.py tests/test_database_config.py tests/test_package_import.py -q
+python -m pytest tests/test_auth_login_api.py tests/test_auth_login_service.py \
+  tests/test_auth_me_api.py tests/test_auth_registration_api.py \
+  tests/test_auth_tokens.py tests/test_current_user_dependency.py -q
+python -m pytest tests/test_organization_access_service.py \
+  tests/test_organization_create_api.py tests/test_organization_models.py \
+  tests/test_organization_rbac_dependency.py tests/test_organization_service.py \
+  tests/test_passwords.py tests/test_upload_validation.py tests/test_user_model.py \
+  tests/test_user_service.py -q
+python -m py_compile src/vault/api/routes/documents.py \
+  src/vault/controls/schemas.py src/vault/exceptions.py \
+  tests/test_control_flags_api.py
+python scripts/run_vault.py --help
+python -m alembic history
+python -m ruff check .
+python -m mypy src scripts tests
+python -m bandit -r src
+python -m pip_audit
+git status --short
+docker --version
+```
+
+Validation results:
+
+```text
+python -m pytest tests/test_control_flags_api.py -q
+Passed. 42 passed.
+
+python -m pytest tests/test_control_flags_api.py \
+  tests/test_control_flag_service.py tests/test_control_flag_model.py \
+  tests/test_document_facts_api.py -q
+Passed. 137 passed.
+
+python -m pytest -q
+Attempted. The sandbox command timed out after mid-suite progress, not after a
+reported test failure. The suite was then run in smaller groups.
+
+python -m pytest tests/test_control_flags_api.py \
+  tests/test_control_flag_service.py tests/test_control_flag_model.py \
+  tests/test_alembic_config.py -q
+Passed. 121 passed.
+
+python -m pytest tests/test_document_fact_service.py \
+  tests/test_document_fact_model.py tests/test_document_facts_api.py \
+  tests/test_document_model.py -q
+Passed. 105 passed.
+
+python -m pytest tests/test_document_service.py tests/test_document_read_api.py \
+  tests/test_document_upload_api.py tests/test_document_storage.py -q
+Passed. 109 passed.
+
+python -m pytest tests/test_alembic_config.py tests/test_api_health.py \
+  tests/test_config.py tests/test_database_config.py tests/test_package_import.py -q
+Passed. 38 passed.
+
+python -m pytest tests/test_auth_login_api.py tests/test_auth_login_service.py \
+  tests/test_auth_me_api.py tests/test_auth_registration_api.py \
+  tests/test_auth_tokens.py tests/test_current_user_dependency.py -q
+Passed. 51 passed.
+
+python -m pytest tests/test_organization_access_service.py \
+  tests/test_organization_create_api.py tests/test_organization_models.py \
+  tests/test_organization_rbac_dependency.py tests/test_organization_service.py \
+  tests/test_passwords.py tests/test_upload_validation.py tests/test_user_model.py \
+  tests/test_user_service.py -q
+Passed. 125 passed.
+
+python -m py_compile src/vault/api/routes/documents.py \
+  src/vault/controls/schemas.py src/vault/exceptions.py \
+  tests/test_control_flags_api.py
+Passed.
+
+python scripts/run_vault.py --help
+Passed. Help text displayed.
+
+python -m alembic history
+Passed. Alembic history shows 0006_create_control_flags as head. No Step 26
+migration was added.
+
+python -m ruff check .
+Could not run in this environment because Ruff is not installed in the active
+runtime.
+
+python -m mypy src scripts tests
+Could not run in this environment because mypy is not installed in the active
+runtime.
+
+python -m bandit -r src
+Could not run in this environment because Bandit is not installed in the active
+runtime.
+
+python -m pip_audit
+Could not run in this environment because pip-audit is not installed in the
+active runtime. No project vulnerability result was produced.
+
+git status --short
+Did not complete in this environment because the uploaded repo zip did not
+include `.git` metadata.
+
+Optional Docker-backed migration smoke check
+Skipped in this environment because Docker is not installed.
+```
+
+Definition of done:
+
+* Control flag response schema exists.
+* Control flag generate, list, and detail routes exist.
+* Control flag routes require authentication.
+* Control flag routes require organization membership.
+* Owners can generate/list/read control flags.
+* Reviewers can generate/list/read control flags.
+* Viewers can list/read control flags.
+* Viewers cannot generate control flags.
+* Non-members cannot generate/list/read control flags.
+* Missing/invalid/expired tokens return authentication errors.
+* Control flag generation verifies the document belongs to the organization.
+* Control flag generation persists generated flags.
+* Control flag generation returns safe flag metadata.
+* Control flag listing is scoped to the requested document.
+* Control flag detail lookup is scoped by document ID and flag ID.
+* Documents from other organizations cannot be used through control flag routes.
+* Flags from other documents are not leaked.
+* Missing documents return safe not-found behavior.
+* Missing flags return safe not-found behavior.
+* Responses do not expose absolute local paths.
+* Responses do not expose raw passwords.
+* Responses do not expose password hashes.
+* Routes appear in OpenAPI.
+* Duplicate-file-hash flags are not generated yet.
+* Duplicate-invoice-attributes flags are not generated yet.
+* No duplicate detection behavior is added yet.
+* No review workflow is added yet.
+* No audit logging is added yet.
+* No exports are added yet.
+* No migrations are added in this step.
+* Tests cover successful generation, role behavior, auth failure, organization
+  scoping, document scoping, flag scoping, safe responses, and OpenAPI
+  inclusion.
+* Existing tests were validated in smaller groups due to sandbox timeout.
+* Pytest groups pass.
+* CLI help works.
+* Alembic history works.
+* Project State is updated.
+* No generated private/local files are included.
+
+Suggested commit message:
+
+```text
+Add control flags API routes
+```
+
+
 
 ## Portfolio readiness checklist
 

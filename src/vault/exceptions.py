@@ -64,6 +64,7 @@ class DocumentFactValidationError(DocumentError):
 class DocumentFactNotFoundError(DocumentError):
     """Raised when requested document fact metadata cannot be found."""
 
+
 class ControlFlagValidationError(VaultError):
     """Raised when control flag data fails service validation."""
 
