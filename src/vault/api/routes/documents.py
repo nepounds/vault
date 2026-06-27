@@ -19,6 +19,7 @@ from vault.config import load_settings
 from vault.controls.schemas import ControlFlagResponse
 from vault.controls.service import (
     generate_control_flags_for_document,
+    generate_duplicate_control_flags_for_document,
     list_control_flags,
     require_control_flag,
 )
@@ -230,6 +231,40 @@ def read_document_fact_detail(
         ) from exc
 
     return DocumentFactResponse.model_validate(fact)
+
+
+@router.post(
+    "/{organization_id}/documents/{document_id}/duplicates/generate",
+    response_model=list[ControlFlagResponse],
+)
+def generate_duplicate_control_flags_route(
+    organization_id: UUID,
+    document_id: UUID,
+    session: Annotated[Session, Depends(get_database_session)],
+    _membership: UploadMembership,
+) -> list[ControlFlagResponse]:
+    """Generate safe duplicate-control flags for one document."""
+    try:
+        document = require_document_for_organization(
+            session,
+            organization_id=organization_id,
+            document_id=document_id,
+        )
+        flags = generate_duplicate_control_flags_for_document(
+            session,
+            document_id=document.id,
+        )
+        session.commit()
+        for flag in flags:
+            session.refresh(flag)
+    except DocumentNotFoundError as exc:
+        session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document was not found.",
+        ) from exc
+
+    return [ControlFlagResponse.model_validate(flag) for flag in flags]
 
 
 @router.post(

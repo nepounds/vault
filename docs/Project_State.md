@@ -37,11 +37,11 @@ Project-control rule:
 
 ## Current status
 
-Current step: Step 27 — Duplicate detection service.
+Current step: Step 28 — Duplicate detection API route.
 
 Status: Complete with documented environment limitations.
 
-Approximate project completion: 86%.
+Approximate project completion: 88%.
 
 Current summary:
 
@@ -651,70 +651,110 @@ Current summary:
 * Missing control flag detail returns HTTP 404 with a safe public message.
 * Flags from other documents or organizations are not leaked through list or
   detail routes.
-* No membership management API routes, document download routes, duplicate
-  detection API routes, reviews, audit logs, exports, refresh tokens, password reset,
-  email verification, CI files, sample outputs, local databases beyond metadata
-  migrations, or application container were added.
+* `POST /organizations/{organization_id}/documents/{document_id}/duplicates/generate`
+  exists and returns HTTP 200 with a list of generated duplicate-oriented
+  control flags.
+* Duplicate detection generation returns an empty list with HTTP 200 when no
+  duplicate flags are generated.
+* Duplicate detection generation requires a valid bearer token for an active
+  user.
+* Duplicate detection generation requires organization membership through the
+  reusable organization RBAC dependency.
+* Duplicate detection generation explicitly allows owners and reviewers.
+* Duplicate detection generation rejects viewers, non-members, and unknown
+  organizations.
+* Missing, invalid, expired, unknown-user, and inactive-user bearer tokens
+  continue to return HTTP 401 before duplicate generation runs.
+* Duplicate detection generation verifies the path document belongs to the path
+  organization before generating flags.
+* Documents from another organization are not accepted through the duplicate
+  detection route, even when the document ID exists.
+* Missing documents in an accessible organization return HTTP 404 with a safe
+  public message.
+* Duplicate detection generation calls
+  `generate_duplicate_control_flags_for_document()`.
+* Successful duplicate detection generation commits and refreshes generated
+  flags before returning.
+* Duplicate detection responses include safe control flag metadata only.
+* Duplicate detection responses do not expose local absolute stored paths, raw
+  passwords, password hashes, or token internals.
+* Duplicate detection responses include `duplicate_file_hash` blocker flags
+  when same-organization file hash duplicates exist.
+* Duplicate detection responses include `duplicate_invoice_attributes` warning
+  flags when same-organization invoice attribute duplicates exist.
+* Duplicate detection generation does not flag cross-organization file hash or
+  invoice attribute duplicates.
+* No membership management API routes, document download routes, reviews, audit
+  logs, exports, refresh tokens, password reset, email verification, CI files,
+  sample outputs, local databases beyond metadata migrations, or application
+  container were added.
 
 Current validation status:
 
 ```text
-Step 27 validation was run in the uploaded runtime with partial tooling
+Step 28 validation was run in the uploaded runtime with partial tooling
 limitations.
 
-python -m pytest tests/test_duplicate_detection_service.py -q
-Passed. 24 passed.
+python -m pytest tests/test_duplicate_detection_api.py -q
+Passed. 32 passed.
 
-python -m pytest tests/test_duplicate_detection_service.py \
-  tests/test_control_flag_service.py -q
-Passed. 65 passed.
+python -m pytest tests/test_duplicate_detection_api.py \
+  tests/test_duplicate_detection_service.py -q
+Passed. 56 passed.
+
+python -m pytest tests/test_control_flags_api.py -q
+Passed. 42 passed.
 
 python -m pytest -q
 Attempted. The sandbox command timed out after mid-suite progress, not after a
 reported test failure. To compensate, the suite was run in smaller groups.
 
-python -m pytest tests/test_control_flags_api.py \
-  tests/test_duplicate_detection_service.py -q
-Passed. 66 passed.
-
-python -m pytest tests/test_control_flag_service.py \
-  tests/test_control_flag_model.py tests/test_document_fact_service.py -q
-Passed. 93 passed.
-
-python -m pytest tests/test_document_fact_model.py \
-  tests/test_document_facts_api.py tests/test_document_model.py -q
-Passed. 67 passed.
-
-python -m pytest tests/test_document_service.py \
-  tests/test_document_read_api.py -q
-Passed. 62 passed.
-
-python -m pytest tests/test_document_upload_api.py \
-  tests/test_document_storage.py -q
-Passed. 47 passed.
-
 python -m pytest tests/test_alembic_config.py tests/test_api_health.py \
-  tests/test_config.py tests/test_database_config.py \
-  tests/test_package_import.py -q
-Passed. 38 passed.
+  tests/test_auth_login_api.py tests/test_auth_login_service.py \
+  tests/test_auth_me_api.py tests/test_auth_registration_api.py -q
+Passed. 65 passed.
 
-python -m pytest tests/test_auth_login_api.py \
-  tests/test_auth_login_service.py tests/test_auth_me_api.py \
-  tests/test_auth_registration_api.py tests/test_auth_tokens.py \
-  tests/test_current_user_dependency.py -q
-Passed. 51 passed.
+python -m pytest tests/test_auth_tokens.py tests/test_config.py \
+  tests/test_control_flag_model.py tests/test_control_flag_service.py \
+  tests/test_control_flags_api.py tests/test_current_user_dependency.py -q
+Passed. 114 passed.
 
-python -m pytest tests/test_organization_access_service.py \
-  tests/test_organization_create_api.py tests/test_organization_models.py \
-  tests/test_organization_rbac_dependency.py -q
-Passed. 70 passed.
-
-python -m pytest tests/test_organization_service.py tests/test_passwords.py \
-  tests/test_upload_validation.py tests/test_user_model.py \
-  tests/test_user_service.py -q
+python -m pytest tests/test_database_config.py \
+  tests/test_document_fact_model.py tests/test_document_fact_service.py -q
 Passed. 55 passed.
 
-python -m py_compile src/vault/controls/service.py \
+python -m pytest tests/test_document_facts_api.py -q
+Passed. 40 passed.
+
+python -m pytest tests/test_document_model.py \
+  tests/test_document_read_api.py -q
+Passed. 43 passed.
+
+python -m pytest tests/test_document_service.py \
+  tests/test_document_storage.py tests/test_document_upload_api.py -q
+Passed. 79 passed.
+
+python -m pytest tests/test_duplicate_detection_api.py \
+  tests/test_duplicate_detection_service.py \
+  tests/test_organization_access_service.py -q
+Passed. 72 passed.
+
+python -m pytest tests/test_organization_create_api.py \
+  tests/test_organization_models.py \
+  tests/test_organization_rbac_dependency.py -q
+Passed. 54 passed.
+
+python -m pytest tests/test_organization_service.py \
+  tests/test_package_import.py tests/test_passwords.py -q
+Passed. 20 passed.
+
+python -m pytest tests/test_upload_validation.py tests/test_user_model.py \
+  tests/test_user_service.py -q
+Passed. 39 passed.
+
+python -m py_compile src/vault/api/routes/documents.py \
+  src/vault/controls/service.py src/vault/controls/schemas.py \
+  src/vault/exceptions.py tests/test_duplicate_detection_api.py \
   tests/test_duplicate_detection_service.py
 Passed.
 
@@ -722,7 +762,7 @@ python scripts/run_vault.py --help
 Passed. Help text displayed.
 
 python -m alembic history
-Passed. Alembic history shows 0006_create_control_flags as head. No Step 27
+Passed. Alembic history shows 0006_create_control_flags as head. No Step 28
 migration was added.
 
 python -m ruff check .
@@ -768,7 +808,7 @@ Validation rule:
 Next planned step:
 
 ```text
-Step 28 — Duplicate detection API route.
+Step 29 — Review decision model and migration.
 ```
 
 
@@ -6930,6 +6970,208 @@ Suggested commit message:
 Add duplicate detection service
 ```
 
+
+
+
+### Step 28 — Duplicate detection API route
+
+Status: Complete with documented environment limitations.
+
+Goal:
+
+* Add an authenticated, organization-scoped duplicate detection API route that
+  lets owners and reviewers generate duplicate-oriented control flags for an
+  existing organization-scoped document.
+
+Completed work:
+
+* Added `POST /organizations/{organization_id}/documents/{document_id}/duplicates/generate`.
+* Reused the existing documents router.
+* Reused the safe `ControlFlagResponse` schema.
+* The route requires authentication.
+* The route requires organization membership through
+  `require_organization_roles()`.
+* The route explicitly allows owners and reviewers.
+* The route rejects viewers, non-members, and unknown organizations.
+* Missing, invalid, expired, unknown-user, and inactive-user tokens return
+  HTTP 401 before duplicate generation runs.
+* The route verifies the path document belongs to the path organization with
+  `require_document_for_organization()`.
+* Documents from other organizations are rejected with safe not-found behavior.
+* Missing documents in an accessible organization return HTTP 404 with a safe
+  public message.
+* The route calls `generate_duplicate_control_flags_for_document()`.
+* Successful duplicate generation commits and refreshes generated flags before
+  returning.
+* Successful duplicate generation returns HTTP 200.
+* Generation returns an empty list when no duplicate flags are generated.
+* Responses include safe control flag metadata only: `id`, `document_id`,
+  `flag_type`, `severity`, `reason`, and `created_at`.
+* Responses do not expose local absolute file paths, raw passwords, password
+  hashes, or token internals.
+* Duplicate generated reasons do not expose local stored file paths.
+* Added `tests/test_duplicate_detection_api.py`.
+* Tests cover owner and reviewer success, viewer denial, non-member denial,
+  token failures, unknown organization behavior, document scoping, missing
+  documents, duplicate file hash flags, duplicate invoice attribute flags,
+  official severities, persistence, safe response metadata, cross-organization
+  duplicate leak prevention, empty generation, and OpenAPI inclusion.
+* No database migrations were added.
+* No review workflow, audit logging, exports, sample output, CI files, local
+  databases, or application container were added.
+
+Files created or edited:
+
+```text
+src/vault/api/routes/documents.py
+tests/test_duplicate_detection_api.py
+docs/Project_State.md
+```
+
+Commands run:
+
+```bash
+python -m pytest tests/test_duplicate_detection_api.py -q
+python -m pytest tests/test_duplicate_detection_api.py \
+  tests/test_duplicate_detection_service.py -q
+python -m pytest tests/test_control_flags_api.py -q
+python -m pytest -q
+python -m pytest tests/test_alembic_config.py tests/test_api_health.py \
+  tests/test_auth_login_api.py tests/test_auth_login_service.py \
+  tests/test_auth_me_api.py tests/test_auth_registration_api.py -q
+python -m pytest tests/test_auth_tokens.py tests/test_config.py \
+  tests/test_control_flag_model.py tests/test_control_flag_service.py \
+  tests/test_control_flags_api.py tests/test_current_user_dependency.py -q
+python -m pytest tests/test_database_config.py \
+  tests/test_document_fact_model.py tests/test_document_fact_service.py -q
+python -m pytest tests/test_document_facts_api.py -q
+python -m pytest tests/test_document_model.py \
+  tests/test_document_read_api.py -q
+python -m pytest tests/test_document_service.py \
+  tests/test_document_storage.py tests/test_document_upload_api.py -q
+python -m pytest tests/test_duplicate_detection_api.py \
+  tests/test_duplicate_detection_service.py \
+  tests/test_organization_access_service.py -q
+python -m pytest tests/test_organization_create_api.py \
+  tests/test_organization_models.py \
+  tests/test_organization_rbac_dependency.py -q
+python -m pytest tests/test_organization_service.py \
+  tests/test_package_import.py tests/test_passwords.py -q
+python -m pytest tests/test_upload_validation.py tests/test_user_model.py \
+  tests/test_user_service.py -q
+python -m py_compile src/vault/api/routes/documents.py \
+  src/vault/controls/service.py src/vault/controls/schemas.py \
+  src/vault/exceptions.py tests/test_duplicate_detection_api.py \
+  tests/test_duplicate_detection_service.py
+python scripts/run_vault.py --help
+python -m alembic history
+python -m ruff check .
+python -m mypy src scripts tests
+python -m bandit -r src
+python -m pip_audit
+git status --short
+docker --version
+```
+
+Validation results:
+
+```text
+python -m pytest tests/test_duplicate_detection_api.py -q
+Passed. 32 passed.
+
+python -m pytest tests/test_duplicate_detection_api.py \
+  tests/test_duplicate_detection_service.py -q
+Passed. 56 passed.
+
+python -m pytest tests/test_control_flags_api.py -q
+Passed. 42 passed.
+
+python -m pytest -q
+Attempted. The sandbox command timed out after mid-suite progress, not after a
+reported test failure. The suite was run in smaller groups.
+
+The smaller pytest groups listed above passed.
+
+python -m py_compile src/vault/api/routes/documents.py \
+  src/vault/controls/service.py src/vault/controls/schemas.py \
+  src/vault/exceptions.py tests/test_duplicate_detection_api.py \
+  tests/test_duplicate_detection_service.py
+Passed.
+
+python scripts/run_vault.py --help
+Passed. Help text displayed.
+
+python -m alembic history
+Passed. Alembic history shows 0006_create_control_flags as head. No Step 28
+migration was added.
+
+python -m ruff check .
+Could not run in this environment because Ruff is not installed in the active
+runtime.
+
+python -m mypy src scripts tests
+Could not run in this environment because mypy is not installed in the active
+runtime.
+
+python -m bandit -r src
+Could not run in this environment because Bandit is not installed in the active
+runtime.
+
+python -m pip_audit
+Could not run in this environment because pip-audit is not installed in the
+active runtime. No project vulnerability result was produced.
+
+git status --short
+Did not complete in this environment because the uploaded repo zip did not
+include `.git` metadata.
+
+Optional Docker-backed migration smoke check
+Skipped in this environment because Docker is not installed.
+```
+
+Definition of done:
+
+* Duplicate detection API route exists.
+* Route requires authentication.
+* Route requires organization membership.
+* Owners can generate duplicate flags.
+* Reviewers can generate duplicate flags.
+* Viewers cannot generate duplicate flags.
+* Non-members cannot generate duplicate flags.
+* Missing, invalid, expired, unknown-user, and inactive-user tokens return
+  authentication errors.
+* Route verifies the document belongs to the organization.
+* Documents from other organizations cannot be used through the route.
+* Missing documents return safe not-found behavior.
+* Route calls the Step 27 duplicate detection service.
+* Route commits successful duplicate flag generation.
+* Route returns generated duplicate control flags.
+* Route returns an empty list when no duplicate flags are generated.
+* Responses return safe control flag metadata.
+* Responses do not expose absolute local paths.
+* Responses do not expose raw passwords.
+* Responses do not expose password hashes.
+* Duplicate detection does not leak cross-organization data.
+* Duplicate detection route appears in OpenAPI.
+* No review workflow was added.
+* No audit logging was added.
+* No exports were added.
+* No migrations were added.
+* Tests cover successful duplicate generation, role behavior, auth failure,
+  organization scoping, document scoping, cross-org leak prevention, empty
+  generation, safe responses, persistence, and OpenAPI inclusion.
+* Existing tests were validated in smaller groups due to sandbox timeout.
+* Pytest groups pass.
+* CLI help works.
+* Alembic history works.
+* Project State is updated.
+* No generated private/local files are included.
+
+Suggested commit message:
+
+```text
+Add duplicate detection API route
+```
 
 
 
