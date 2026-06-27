@@ -37,11 +37,11 @@ Project-control rule:
 
 ## Current status
 
-Current step: Step 23 — Document facts API route.
+Current step: Step 24 — Control flags model and migration.
 
 Status: Complete with documented environment limitations.
 
-Approximate project completion: 77%.
+Approximate project completion: 79%.
 
 Current summary:
 
@@ -494,40 +494,72 @@ Current summary:
 * If storage succeeds but the database commit later fails, Step 19 does not yet
   delete the stored file as rollback cleanup; that cleanup is deferred rather
   than making this route step larger.
-* No membership management API routes, document download routes, control flags,
-  duplicate detection, reviews, audit logs, exports, refresh tokens, password
-  reset, email verification, CI files, sample outputs, local databases beyond
-  metadata migrations, or application container were added.
+* `src/vault/controls/severities.py` defines official control flag severity
+  values: `info`, `warning`, and `blocker`.
+* `src/vault/controls/types.py` defines the initial official control flag
+  type values: `missing_invoice_number`, `missing_invoice_date`,
+  `missing_due_date`, `non_usd_currency`, `high_amount`,
+  `duplicate_file_hash`, and `duplicate_invoice_attributes`.
+* `src/vault/controls/models.py` defines the initial `ControlFlag` ORM model.
+* The `ControlFlag` model includes `id`, `document_id`, `flag_type`,
+  `severity`, `reason`, and `created_at`.
+* Control flag IDs use UUID primary keys.
+* Control flag timestamps use the same UTC-aware application-side timestamp
+  default as existing user, organization, document, and fact models.
+* Control flags are connected to documents through a foreign key from
+  `control_flags.document_id` to `documents.id`.
+* Control flag metadata requires `document_id`, `flag_type`, `severity`,
+  `reason`, and `created_at`.
+* Control flag metadata uses reasonable string lengths for flag type,
+  severity, and reason.
+* Control flag metadata includes a severity check constraint for the official
+  severity values.
+* Control flag metadata includes a flag type check constraint for the initial
+  official flag type values.
+* Control flag lookup indexes exist for document ID, severity, and flag type.
+* Control flag review-queue groundwork exists as a non-unique composite index
+  on document ID and severity.
+* Duplicate control flags are still allowed because generation and
+  deduplication behavior has not been implemented yet.
+* Shared SQLAlchemy model metadata imports `ControlFlag`, so Alembic target
+  metadata includes the `control_flags` table.
+* A create-control-flags migration exists at
+  `alembic/versions/0006_create_control_flags.py`.
+* The create-control-flags migration creates only the `control_flags` table and
+  its supporting indexes.
+* The create-control-flags migration downgrade drops only the
+  `control_flags` table after dropping its supporting indexes.
+* No membership management API routes, document download routes, control flag
+  generation service, control flag API routes, duplicate detection, reviews,
+  audit logs, exports, refresh tokens, password reset, email verification, CI
+  files, sample outputs, local databases beyond metadata migrations, or
+  application container were added.
 
 Current validation status:
 
 ```text
-Step 23 validation was run in the uploaded runtime with partial tooling
+Step 24 validation was run in the uploaded runtime with partial tooling
 limitations.
 
-python -m pytest tests/test_document_facts_api.py -q
-Passed. 40 passed.
+python -m pytest tests/test_control_flag_model.py tests/test_alembic_config.py -q
+Passed. 38 passed.
 
 python -m pytest -q
 Attempted. The sandbox command timed out after mid-suite progress, not after a
 reported test failure. To compensate, the suite was run in smaller groups.
 
-python -m pytest tests/test_document_fact_service.py \
-  tests/test_document_fact_model.py tests/test_document_model.py -q
-Passed. 65 passed.
+python -m pytest tests/test_control_flag_model.py \
+  tests/test_document_fact_service.py tests/test_document_fact_model.py \
+  tests/test_document_model.py -q
+Passed. 79 passed.
 
-python -m pytest tests/test_document_service.py tests/test_document_read_api.py -q
-Passed. 62 passed.
-
-python -m pytest tests/test_document_upload_api.py -q
-Passed. 22 passed.
-
-python -m pytest tests/test_document_storage.py -q
-Passed. 25 passed.
+python -m pytest tests/test_document_service.py tests/test_document_read_api.py \
+  tests/test_document_upload_api.py tests/test_document_storage.py -q
+Passed. 109 passed.
 
 python -m pytest tests/test_alembic_config.py tests/test_api_health.py \
   tests/test_config.py tests/test_database_config.py tests/test_package_import.py -q
-Passed. 35 passed.
+Passed. 38 passed.
 
 python -m pytest tests/test_auth_login_api.py tests/test_auth_login_service.py \
   tests/test_auth_me_api.py tests/test_auth_registration_api.py \
@@ -538,22 +570,21 @@ python -m pytest tests/test_organization_access_service.py \
   tests/test_organization_create_api.py tests/test_organization_models.py \
   tests/test_organization_rbac_dependency.py tests/test_organization_service.py \
   tests/test_passwords.py tests/test_upload_validation.py tests/test_user_model.py \
-  tests/test_user_service.py -q
-Passed. 125 passed.
+  tests/test_user_service.py tests/test_document_facts_api.py -q
+Passed. 165 passed.
 
-python -m py_compile src/vault/api/routes/documents.py \
-  src/vault/documents/schemas.py src/vault/documents/service.py \
-  src/vault/exceptions.py tests/test_document_facts_api.py \
-  tests/test_document_fact_service.py
+python -m py_compile src/vault/controls/__init__.py \
+  src/vault/controls/models.py src/vault/controls/severities.py \
+  src/vault/controls/types.py src/vault/models.py \
+  alembic/versions/0006_create_control_flags.py \
+  tests/test_control_flag_model.py tests/test_alembic_config.py
 Passed.
 
 python scripts/run_vault.py --help
 Passed. Help text displayed.
 
 python -m alembic history
-Passed. Alembic history shows 0001_baseline, 0002_create_users,
-0003_orgs_memberships, 0004_create_documents, and
-0005_create_document_facts as head. No Step 23 migration was added.
+Passed. Alembic history shows 0006_create_control_flags as head.
 
 python -m ruff check .
 Could not run in this environment because Ruff is not installed in the active
@@ -597,7 +628,7 @@ Validation rule:
 Next planned step:
 
 ```text
-Step 24 — Control flags model and migration.
+Step 25 — Control flags service.
 ```
 
 
@@ -5863,6 +5894,219 @@ Suggested commit message:
 
 ```text
 Add document facts API route
+```
+
+### Step 24 — Control flags model and migration
+
+Status: Complete with documented environment limitations.
+
+Goal:
+
+* Add the initial `ControlFlag` SQLAlchemy model and one Alembic migration that
+  creates the `control_flags` table, without adding control flag generation
+  service or API behavior yet.
+
+Completed work:
+
+* Added `src/vault/controls/__init__.py`.
+* Added `src/vault/controls/severities.py`.
+* Added official control flag severity values: `info`, `warning`, and
+  `blocker`.
+* Added `src/vault/controls/types.py`.
+* Added initial official control flag type values:
+  `missing_invoice_number`, `missing_invoice_date`, `missing_due_date`,
+  `non_usd_currency`, `high_amount`, `duplicate_file_hash`, and
+  `duplicate_invoice_attributes`.
+* Added `src/vault/controls/models.py`.
+* Added a typed SQLAlchemy 2-style `ControlFlag` ORM model.
+* Added the official control flag fields: `id`, `document_id`, `flag_type`,
+  `severity`, `reason`, and `created_at`.
+* Used UUID primary keys for control flags.
+* Used the existing UTC-aware timestamp helper for `created_at`.
+* Added a non-null foreign key from `control_flags.document_id` to
+  `documents.id`.
+* Kept `document_id`, `flag_type`, `severity`, `reason`, and `created_at`
+  required.
+* Added reasonable string lengths for flag type, severity, and reason.
+* Added a check constraint for the official severity values.
+* Added a check constraint for the initial official flag type values.
+* Added lookup indexes for `document_id`, `severity`, and `flag_type`.
+* Added a non-unique composite index on `document_id` and `severity` for future
+  review queues.
+* Did not add a uniqueness constraint, so duplicate control flags remain
+  allowed.
+* Updated `src/vault/models.py` so shared model metadata imports
+  `ControlFlag`.
+* Added `alembic/versions/0006_create_control_flags.py`.
+* The migration creates only the `control_flags` table and supporting indexes.
+* The migration downgrade drops only the supporting indexes and
+  `control_flags` table.
+* Added `tests/test_control_flag_model.py`.
+* Updated `tests/test_alembic_config.py` for the new migration file and
+  Alembic target metadata.
+* Existing Step 1 through Step 23 behavior remains compatible in the tested
+  groups.
+* No control flag generation service, control flag API route, duplicate
+  document detection, duplicate invoice detection, review decisions, document
+  status transitions, audit logging, exports, sample output, CI files, local
+  databases, or application container were added.
+
+Files created or edited:
+
+```text
+src/vault/controls/__init__.py
+src/vault/controls/models.py
+src/vault/controls/severities.py
+src/vault/controls/types.py
+src/vault/models.py
+alembic/versions/0006_create_control_flags.py
+tests/test_control_flag_model.py
+tests/test_alembic_config.py
+docs/Project_State.md
+```
+
+Commands run:
+
+```bash
+python -m pytest tests/test_control_flag_model.py tests/test_alembic_config.py -q
+python -m pytest -q
+python -m pytest tests/test_control_flag_model.py \
+  tests/test_document_fact_service.py tests/test_document_fact_model.py \
+  tests/test_document_model.py -q
+python -m pytest tests/test_document_service.py tests/test_document_read_api.py \
+  tests/test_document_upload_api.py tests/test_document_storage.py -q
+python -m pytest tests/test_alembic_config.py tests/test_api_health.py \
+  tests/test_config.py tests/test_database_config.py tests/test_package_import.py -q
+python -m pytest tests/test_auth_login_api.py tests/test_auth_login_service.py \
+  tests/test_auth_me_api.py tests/test_auth_registration_api.py \
+  tests/test_auth_tokens.py tests/test_current_user_dependency.py -q
+python -m pytest tests/test_organization_access_service.py \
+  tests/test_organization_create_api.py tests/test_organization_models.py \
+  tests/test_organization_rbac_dependency.py tests/test_organization_service.py \
+  tests/test_passwords.py tests/test_upload_validation.py tests/test_user_model.py \
+  tests/test_user_service.py tests/test_document_facts_api.py -q
+python -m py_compile src/vault/controls/__init__.py \
+  src/vault/controls/models.py src/vault/controls/severities.py \
+  src/vault/controls/types.py src/vault/models.py \
+  alembic/versions/0006_create_control_flags.py \
+  tests/test_control_flag_model.py tests/test_alembic_config.py
+python scripts/run_vault.py --help
+python -m alembic history
+python -m ruff check .
+python -m mypy src scripts tests
+python -m bandit -r src
+python -m pip_audit
+git status --short
+```
+
+Validation results:
+
+```text
+python -m pytest tests/test_control_flag_model.py tests/test_alembic_config.py -q
+Passed. 38 passed.
+
+python -m pytest -q
+Attempted. The sandbox command timed out after mid-suite progress, not after a
+reported test failure. The suite was then run in smaller groups.
+
+python -m pytest tests/test_control_flag_model.py \
+  tests/test_document_fact_service.py tests/test_document_fact_model.py \
+  tests/test_document_model.py -q
+Passed. 79 passed.
+
+python -m pytest tests/test_document_service.py tests/test_document_read_api.py \
+  tests/test_document_upload_api.py tests/test_document_storage.py -q
+Passed. 109 passed.
+
+python -m pytest tests/test_alembic_config.py tests/test_api_health.py \
+  tests/test_config.py tests/test_database_config.py tests/test_package_import.py -q
+Passed. 38 passed.
+
+python -m pytest tests/test_auth_login_api.py tests/test_auth_login_service.py \
+  tests/test_auth_me_api.py tests/test_auth_registration_api.py \
+  tests/test_auth_tokens.py tests/test_current_user_dependency.py -q
+Passed. 51 passed.
+
+python -m pytest tests/test_organization_access_service.py \
+  tests/test_organization_create_api.py tests/test_organization_models.py \
+  tests/test_organization_rbac_dependency.py tests/test_organization_service.py \
+  tests/test_passwords.py tests/test_upload_validation.py tests/test_user_model.py \
+  tests/test_user_service.py tests/test_document_facts_api.py -q
+Passed. 165 passed.
+
+python -m py_compile src/vault/controls/__init__.py \
+  src/vault/controls/models.py src/vault/controls/severities.py \
+  src/vault/controls/types.py src/vault/models.py \
+  alembic/versions/0006_create_control_flags.py \
+  tests/test_control_flag_model.py tests/test_alembic_config.py
+Passed.
+
+python scripts/run_vault.py --help
+Passed. Help text displayed.
+
+python -m alembic history
+Passed. Alembic history shows 0006_create_control_flags as head.
+
+python -m ruff check .
+Could not run in this environment because Ruff is not installed in the active
+runtime.
+
+python -m mypy src scripts tests
+Could not run in this environment because mypy is not installed in the active
+runtime.
+
+python -m bandit -r src
+Could not run in this environment because Bandit is not installed in the active
+runtime.
+
+python -m pip_audit
+Could not run in this environment because pip-audit is not installed in the
+active runtime. No project vulnerability result was produced.
+
+git status --short
+Did not complete in this environment because the uploaded repo zip did not
+include `.git` metadata.
+
+Optional Docker-backed migration smoke check
+Skipped in this environment because Docker is not installed.
+```
+
+Definition of done:
+
+* `ControlFlag` ORM model exists.
+* `control_flags` table metadata matches Project State fields.
+* `document_id` links flags to documents.
+* Required flag fields are non-null.
+* Official severity values are defined.
+* Initial official flag type values are defined.
+* Severity constraint exists.
+* Flag type constraint exists.
+* Useful lookup indexes exist.
+* Duplicate flags are still allowed.
+* Shared model metadata includes `control_flags`.
+* Alembic target metadata includes `control_flags`.
+* Migration `0006_create_control_flags.py` exists.
+* Migration creates only `control_flags` and supporting indexes.
+* Migration downgrade drops only `control_flags` and supporting indexes.
+* No control flag service is added yet.
+* No control flag API route is added yet.
+* No duplicate detection is added yet.
+* No review workflow is added yet.
+* No audit logging is added yet.
+* No exports are added yet.
+* Tests cover model structure, official values, constraints, indexes, metadata,
+  and migration presence.
+* Existing tests were validated in smaller groups due to sandbox timeout.
+* Pytest groups pass.
+* CLI help works.
+* Alembic history works.
+* Project State is updated.
+* No generated private/local files are included.
+
+Suggested commit message:
+
+```text
+Add control flags model
 ```
 
 ## Portfolio readiness checklist
