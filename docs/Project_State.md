@@ -37,11 +37,11 @@ Project-control rule:
 
 ## Current status
 
-Current step: Step 24 — Control flags model and migration.
+Current step: Step 25 — Control flags service.
 
 Status: Complete with documented environment limitations.
 
-Approximate project completion: 79%.
+Approximate project completion: 82%.
 
 Current summary:
 
@@ -521,6 +521,54 @@ Current summary:
   on document ID and severity.
 * Duplicate control flags are still allowed because generation and
   deduplication behavior has not been implemented yet.
+* `src/vault/controls/service.py` provides typed control flag service
+  behavior.
+* `create_control_flag()` creates one `ControlFlag` record for a supplied
+  document ID.
+* Control flag creation stores document ID, flag type, severity, reason,
+  and generated metadata.
+* Control flag creation trims flag type, severity, and reason.
+* Control flag creation rejects blank flag type, blank severity, and blank
+  reason.
+* Control flag creation rejects unsupported flag types using the official
+  Step 24 type values.
+* Control flag creation rejects unsupported severities using the official
+  Step 24 severity values.
+* Control flag records are added to the supplied session and flushed so
+  generated IDs are available.
+* Control flag creation does not commit automatically.
+* Duplicate control flags are still allowed because duplicate rejection has
+  not been implemented yet.
+* `list_control_flags()` returns only flags for the requested document.
+* Control flag listing is deterministic: blocker before warning before
+  info, then oldest first by `created_at`, then by `id`.
+* `get_control_flag()` scopes lookup by both document ID and flag ID.
+* `require_control_flag()` raises a safe custom exception when a scoped
+  control flag is missing.
+* Flags from another document are not returned by scoped lookup.
+* `generate_control_flags_for_document()` inspects structured document
+  facts for one requested document only.
+* Initial control flag generation creates warning flags for missing invoice
+  numbers and missing invoice dates.
+* Initial control flag generation creates info flags for missing due dates.
+* Initial control flag generation creates warning flags for non-USD
+  currency.
+* Initial control flag generation creates blocker flags for amounts greater
+  than or equal to 100,000 cents.
+* Generated control flag reasons are human-readable and explain why the
+  flag exists.
+* Control flag generation returns the created `ControlFlag` records and
+  flushes them so IDs are available.
+* Control flag generation does not commit automatically.
+* Control flag generation creates no flags when the requested document has
+  no facts.
+* Control flag generation creates no flags for clean facts.
+* Control flag generation does not create duplicate-file-hash or
+  duplicate-invoice-attributes flags yet.
+* Control flag generation does not update document status.
+* Control flag generation does not verify organization membership; route
+  dependencies will continue to own organization access in future API
+  steps.
 * Shared SQLAlchemy model metadata imports `ControlFlag`, so Alembic target
   metadata includes the `control_flags` table.
 * A create-control-flags migration exists at
@@ -530,28 +578,31 @@ Current summary:
 * The create-control-flags migration downgrade drops only the
   `control_flags` table after dropping its supporting indexes.
 * No membership management API routes, document download routes, control flag
-  generation service, control flag API routes, duplicate detection, reviews,
-  audit logs, exports, refresh tokens, password reset, email verification, CI
-  files, sample outputs, local databases beyond metadata migrations, or
-  application container were added.
+  API routes, duplicate detection, reviews, audit logs, exports, refresh
+  tokens, password reset, email verification, CI files, sample outputs, local
+  databases beyond metadata migrations, or application container were added.
 
 Current validation status:
 
 ```text
-Step 24 validation was run in the uploaded runtime with partial tooling
+Step 25 validation was run in the uploaded runtime with partial tooling
 limitations.
 
-python -m pytest tests/test_control_flag_model.py tests/test_alembic_config.py -q
-Passed. 38 passed.
+python -m pytest tests/test_control_flag_service.py -q
+Passed. 41 passed.
+
+python -m pytest tests/test_control_flag_service.py \
+  tests/test_control_flag_model.py tests/test_alembic_config.py -q
+Passed. 79 passed.
 
 python -m pytest -q
 Attempted. The sandbox command timed out after mid-suite progress, not after a
 reported test failure. To compensate, the suite was run in smaller groups.
 
-python -m pytest tests/test_control_flag_model.py \
-  tests/test_document_fact_service.py tests/test_document_fact_model.py \
-  tests/test_document_model.py -q
-Passed. 79 passed.
+python -m pytest tests/test_control_flag_service.py \
+  tests/test_control_flag_model.py tests/test_document_fact_service.py \
+  tests/test_document_fact_model.py tests/test_document_model.py -q
+Passed. 120 passed.
 
 python -m pytest tests/test_document_service.py tests/test_document_read_api.py \
   tests/test_document_upload_api.py tests/test_document_storage.py -q
@@ -573,18 +624,16 @@ python -m pytest tests/test_organization_access_service.py \
   tests/test_user_service.py tests/test_document_facts_api.py -q
 Passed. 165 passed.
 
-python -m py_compile src/vault/controls/__init__.py \
-  src/vault/controls/models.py src/vault/controls/severities.py \
-  src/vault/controls/types.py src/vault/models.py \
-  alembic/versions/0006_create_control_flags.py \
-  tests/test_control_flag_model.py tests/test_alembic_config.py
+python -m py_compile src/vault/controls/service.py src/vault/exceptions.py \
+  tests/test_control_flag_service.py
 Passed.
 
 python scripts/run_vault.py --help
 Passed. Help text displayed.
 
 python -m alembic history
-Passed. Alembic history shows 0006_create_control_flags as head.
+Passed. Alembic history shows 0006_create_control_flags as head. No Step 25
+migration was added.
 
 python -m ruff check .
 Could not run in this environment because Ruff is not installed in the active
@@ -608,6 +657,7 @@ include `.git` metadata.
 
 Optional Docker-backed migration smoke check
 Skipped in this environment because Docker is not installed.
+
 ```
 
 Required validation commands:
@@ -628,7 +678,7 @@ Validation rule:
 Next planned step:
 
 ```text
-Step 25 — Control flags service.
+Step 26 — Control flags API routes.
 ```
 
 
@@ -6107,6 +6157,233 @@ Suggested commit message:
 
 ```text
 Add control flags model
+```
+
+
+### Step 25 — Control flags service
+
+Status: Complete with documented environment limitations.
+
+Goal:
+
+* Add a directly testable control flags service that can create, validate, list,
+  retrieve, and generate initial accounting-control flags for a document using
+  existing document facts, without adding API routes yet.
+
+Completed work:
+
+* Added `src/vault/controls/service.py`.
+* Added `ControlFlagValidationError` in `src/vault/exceptions.py`.
+* Added `ControlFlagNotFoundError` in `src/vault/exceptions.py`.
+* Added typed `create_control_flag()` service behavior.
+* The service accepts a SQLAlchemy `Session`, document ID, flag type, severity,
+  and reason.
+* The service creates a `ControlFlag` record and adds it to the supplied
+  session.
+* The service flushes so generated flag IDs are available.
+* The service does not commit automatically.
+* Flag type, severity, and reason are trimmed.
+* Blank flag type, blank severity, and blank reason are rejected.
+* Unsupported flag types are rejected using the official Step 24 flag type
+  values.
+* Unsupported severities are rejected using the official Step 24 severity
+  values.
+* Duplicate control flags are allowed for now.
+* Added typed `list_control_flags()` helper.
+* Flag listing is scoped to one document ID.
+* Flag listing is deterministic: blocker before warning before info, then
+  oldest first by `created_at`, then by `id`.
+* Added typed `get_control_flag()` helper.
+* Flag detail lookup scopes by both document ID and flag ID.
+* Added typed `require_control_flag()` helper.
+* Missing required flag lookup raises a safe custom not-found exception.
+* Flags from another document are not returned by scoped lookup.
+* Added typed `generate_control_flags_for_document()` helper.
+* Generation inspects facts for the requested document only.
+* Generation creates warning flags for missing invoice numbers.
+* Generation creates warning flags for missing invoice dates.
+* Generation creates info flags for missing due dates.
+* Generation creates warning flags for non-USD currency.
+* Generation creates blocker flags for amounts greater than or equal to 100,000
+  cents.
+* Generated reasons are clear, non-blank, and human-readable.
+* Generation returns the created `ControlFlag` records.
+* Generation flushes created flags so IDs are available.
+* Generation does not commit automatically.
+* Generation creates no flags when no facts exist for the document.
+* Generation creates no flags for clean facts.
+* Generation only inspects facts for the requested document.
+* Generation does not create duplicate-file-hash flags yet.
+* Generation does not create duplicate-invoice-attributes flags yet.
+* Generation does not update document status.
+* Generation does not verify organization membership.
+* No database migrations were added.
+* No control flag API routes, duplicate document detection, duplicate invoice
+  detection, review decisions, document status transitions, audit logging,
+  exports, sample outputs, CI files, local databases, or application container
+  were added.
+* Added `tests/test_control_flag_service.py`.
+
+Files created or edited:
+
+```text
+src/vault/controls/service.py
+src/vault/exceptions.py
+tests/test_control_flag_service.py
+docs/Project_State.md
+```
+
+Commands run:
+
+```bash
+python -m pytest tests/test_control_flag_service.py -q
+python -m pytest tests/test_control_flag_service.py \
+  tests/test_control_flag_model.py tests/test_alembic_config.py -q
+python -m pytest -q
+python -m pytest tests/test_control_flag_service.py \
+  tests/test_control_flag_model.py tests/test_document_fact_service.py \
+  tests/test_document_fact_model.py tests/test_document_model.py -q
+python -m pytest tests/test_document_service.py tests/test_document_read_api.py \
+  tests/test_document_upload_api.py tests/test_document_storage.py -q
+python -m pytest tests/test_alembic_config.py tests/test_api_health.py \
+  tests/test_config.py tests/test_database_config.py tests/test_package_import.py -q
+python -m pytest tests/test_auth_login_api.py tests/test_auth_login_service.py \
+  tests/test_auth_me_api.py tests/test_auth_registration_api.py \
+  tests/test_auth_tokens.py tests/test_current_user_dependency.py -q
+python -m pytest tests/test_organization_access_service.py \
+  tests/test_organization_create_api.py tests/test_organization_models.py \
+  tests/test_organization_rbac_dependency.py tests/test_organization_service.py \
+  tests/test_passwords.py tests/test_upload_validation.py tests/test_user_model.py \
+  tests/test_user_service.py tests/test_document_facts_api.py -q
+python -m py_compile src/vault/controls/service.py src/vault/exceptions.py \
+  tests/test_control_flag_service.py
+python scripts/run_vault.py --help
+python -m alembic history
+python -m ruff check .
+python -m mypy src scripts tests
+python -m bandit -r src
+python -m pip_audit
+git status --short
+docker --version
+```
+
+Validation results:
+
+```text
+python -m pytest tests/test_control_flag_service.py -q
+Passed. 41 passed.
+
+python -m pytest tests/test_control_flag_service.py \
+  tests/test_control_flag_model.py tests/test_alembic_config.py -q
+Passed. 79 passed.
+
+python -m pytest -q
+Attempted. The sandbox command timed out after mid-suite progress, not after a
+reported test failure. The suite was then run in smaller groups.
+
+python -m pytest tests/test_control_flag_service.py \
+  tests/test_control_flag_model.py tests/test_document_fact_service.py \
+  tests/test_document_fact_model.py tests/test_document_model.py -q
+Passed. 120 passed.
+
+python -m pytest tests/test_document_service.py tests/test_document_read_api.py \
+  tests/test_document_upload_api.py tests/test_document_storage.py -q
+Passed. 109 passed.
+
+python -m pytest tests/test_alembic_config.py tests/test_api_health.py \
+  tests/test_config.py tests/test_database_config.py tests/test_package_import.py -q
+Passed. 38 passed.
+
+python -m pytest tests/test_auth_login_api.py tests/test_auth_login_service.py \
+  tests/test_auth_me_api.py tests/test_auth_registration_api.py \
+  tests/test_auth_tokens.py tests/test_current_user_dependency.py -q
+Passed. 51 passed.
+
+python -m pytest tests/test_organization_access_service.py \
+  tests/test_organization_create_api.py tests/test_organization_models.py \
+  tests/test_organization_rbac_dependency.py tests/test_organization_service.py \
+  tests/test_passwords.py tests/test_upload_validation.py tests/test_user_model.py \
+  tests/test_user_service.py tests/test_document_facts_api.py -q
+Passed. 165 passed.
+
+python -m py_compile src/vault/controls/service.py src/vault/exceptions.py \
+  tests/test_control_flag_service.py
+Passed.
+
+python scripts/run_vault.py --help
+Passed. Help text displayed.
+
+python -m alembic history
+Passed. Alembic history shows 0006_create_control_flags as head. No Step 25
+migration was added.
+
+python -m ruff check .
+Could not run in this environment because Ruff is not installed in the active
+runtime.
+
+python -m mypy src scripts tests
+Could not run in this environment because mypy is not installed in the active
+runtime.
+
+python -m bandit -r src
+Could not run in this environment because Bandit is not installed in the active
+runtime.
+
+python -m pip_audit
+Could not run in this environment because pip-audit is not installed in the
+active runtime. No project vulnerability result was produced.
+
+git status --short
+Did not complete in this environment because the uploaded repo zip did not
+include `.git` metadata.
+
+Optional Docker-backed migration smoke check
+Skipped in this environment because Docker is not installed.
+```
+
+Definition of done:
+
+* Control flag creation service exists.
+* Service creates a `ControlFlag` record.
+* Service validates required flag fields.
+* Service rejects blank required strings.
+* Service rejects unsupported flag types.
+* Service rejects unsupported severities.
+* Service trims simple metadata strings.
+* Service flushes so generated IDs are available.
+* Service does not commit automatically.
+* Duplicate flags are still allowed.
+* Flag listing helper exists.
+* Flag detail helper exists.
+* Required flag helper exists.
+* Flag lookup is scoped by document ID and flag ID.
+* Flags from another document are not leaked.
+* Initial control flag generation helper exists.
+* Generation inspects document facts for one document.
+* Generation creates flags for missing invoice number, missing invoice date,
+  missing due date, non-USD currency, and high amount.
+* Generation does not create duplicate-detection flags yet.
+* Generation returns created flags.
+* Generation does not commit automatically.
+* No control flag API route is added yet.
+* No duplicate detection behavior is added yet.
+* No review workflow is added yet.
+* No audit logging is added yet.
+* No exports are added yet.
+* No migrations are added in this step.
+* Tests cover creation, validation, duplicate allowance, listing, scoped lookup,
+  generation rules, clean facts, no-fact behavior, and safe not-found behavior.
+* Existing tests were validated in smaller groups due to sandbox timeout.
+* Pytest groups pass.
+* CLI help works.
+* Alembic history works.
+* Project State is updated.
+* No generated private/local files are included.
+
+Suggested commit message:
+
+```text
+Add control flags service
 ```
 
 ## Portfolio readiness checklist
