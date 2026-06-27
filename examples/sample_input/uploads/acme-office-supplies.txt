@@ -1,0 +1,5 @@
+FAKE DEMO DOCUMENT
+Vendor: Acme Demo Office Supplies
+Invoice: DEMO-1001
+Amount: 248.75 USD
+This is fake sample text for the Vault portfolio demo.

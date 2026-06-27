@@ -37,11 +37,11 @@ Project-control rule:
 
 ## Current status
 
-Current step: Step 37 — Export API routes.
+Current step: Step 38 — Sample input/output and demo export command.
 
 Status: Complete with documented environment limitations.
 
-Approximate project completion: 99%.
+Approximate project completion: 99.5%.
 
 Current summary:
 
@@ -955,6 +955,23 @@ Current summary:
 * Export audit metadata does not include full CSV contents.
 * Failed and unauthorized export attempts do not create audit entries.
 * Export routes do not write CSV files to disk.
+* Step 38 adds fake sample input files under `examples/sample_input/`.
+* Step 38 adds fake uploaded text documents under
+  `examples/sample_input/uploads/`.
+* Step 38 adds `examples/sample_input/invoice_facts.csv` using the official
+  sample invoice fact columns.
+* Step 38 adds deterministic committed sample output CSV files under
+  `examples/sample_output/`.
+* Step 38 adds `python scripts/run_vault.py export-demo --output-dir
+  examples/sample_output`.
+* The demo export command uses deterministic fake in-memory row data and the
+  existing CSV builders.
+* The demo export command does not require Docker, PostgreSQL, network access,
+  environment variables, local databases, or uploaded storage files.
+* The demo export command creates the output directory when missing.
+* The demo export command overwrites only the official demo output files and
+  does not delete unrelated files.
+* Committed sample outputs match regenerated demo export output.
 * No sample output files, demo seed command, migrations, CI, or README final
   polish were added in Step 37.
 * No membership management API routes, document download routes, refresh
@@ -964,29 +981,32 @@ Current summary:
 Current validation status:
 
 ```text
-Step 37 validation was run in the uploaded runtime with partial tooling
+Step 38 validation was run in the uploaded runtime with partial tooling
 limitations.
 
-python -m pytest tests/test_export_api.py -q
-Passed. 23 passed.
+python -m pytest tests/test_demo_export_cli.py -q
+Passed. 14 passed.
 
-python -m pytest tests/test_export_api.py tests/test_export_builders.py -q
-Passed. 32 passed.
+python -m pytest tests/test_demo_export_cli.py tests/test_export_builders.py -q
+Passed. 23 passed.
 
 python -m pytest -q
 Attempted. The sandbox command timed out after mid-suite progress, not after a
-reported test failure. Focused Step 37 coverage passed.
+reported test failure. Focused Step 38 coverage passed.
 
-python -m py_compile src/vault/api/main.py src/vault/api/routes/exports.py tests/test_export_api.py
+python -m py_compile scripts/run_vault.py tests/test_demo_export_cli.py
 Passed.
 
 python scripts/run_vault.py --help
-Passed. Help text displayed.
+Passed. Help text displayed and includes export-demo.
+
+python scripts/run_vault.py export-demo --output-dir examples/sample_output
+Passed. Wrote approved_documents.csv, exceptions_report.csv, and audit_log.csv.
 
 python -m alembic history
 Passed. Alembic history shows 0008_create_audit_entries as head.
 
-Python line-length check for Step 37 edited Python files
+Python line-length check for Step 38 edited Python files
 Passed. No lines over 88 characters were found.
 
 python -m ruff check .
@@ -1032,10 +1052,194 @@ Validation rule:
 Next planned step:
 
 ```text
-Step 38 — Sample input/output and demo export command.
+Step 39 — CI, README quickstart, and final hardening.
 ```
 
 
+
+
+### Step 38 — Sample input/output and demo export command
+
+Status: Complete with documented environment limitations.
+
+Goal:
+
+* Add fake sample input files, a deterministic local demo export command,
+  and committed sample output CSV files so Vault can demonstrate the
+  export workflow without real customer data, network services, Docker,
+  PostgreSQL, or manual API calls.
+
+Completed work:
+
+* Added fake sample input folder `examples/sample_input/`.
+* Added `examples/sample_input/invoice_facts.csv`.
+* The fake invoice facts CSV uses the official required columns:
+  `vendor_name`, `invoice_number`, `invoice_date`, `amount_cents`,
+  `currency`, and `category`.
+* The fake invoice facts CSV includes optional `due_date` and `memo`
+  columns.
+* Added fake uploaded text documents under
+  `examples/sample_input/uploads/`.
+* Sample upload filenames are safe and simple.
+* Sample upload contents are fake text only.
+* Added `export-demo` to `scripts/run_vault.py`.
+* Required command works:
+  `python scripts/run_vault.py export-demo --output-dir examples/sample_output`.
+* The demo export command creates deterministic in-memory fake export rows.
+* The demo export command calls the existing Step 36 CSV builders directly.
+* The demo export command does not require Docker.
+* The demo export command does not require PostgreSQL.
+* The demo export command does not require network access.
+* The demo export command does not require environment variables.
+* The demo export command creates the output directory when missing.
+* The demo export command overwrites only `approved_documents.csv`,
+  `exceptions_report.csv`, and `audit_log.csv`.
+* The demo export command does not delete unrelated files in the output
+  directory.
+* The demo export command prints a short success message listing the files
+  it wrote.
+* Added committed sample outputs under `examples/sample_output/`.
+* Sample approved-documents output includes one approved document with
+  structured fact fields and one approved document with blank fact fields.
+* Sample exceptions-report output includes one blocker flag and one warning
+  flag.
+* Sample audit-log output includes several fake audit rows, including an
+  `export_generated` row.
+* Sample audit metadata avoids raw passwords, password hashes, bearer tokens,
+  token payloads, local absolute paths, secrets, and real customer data.
+* Added `tests/test_demo_export_cli.py`.
+* Tests cover CLI help, successful command execution, missing output
+  directory creation, deterministic output, official file overwrite,
+  unrelated file preservation, no local databases, no uploaded storage files,
+  current headers, representative fake rows, risky output scanning, committed
+  output drift, invoice facts columns, fake upload files, and sample-input
+  safety checks.
+* No API behavior was changed.
+* No migrations were added.
+* No CI workflow was added.
+* README final polish remains deferred to Step 39.
+
+Files created or edited:
+
+```text
+scripts/run_vault.py
+tests/test_demo_export_cli.py
+examples/sample_input/invoice_facts.csv
+examples/sample_input/uploads/acme-office-supplies.txt
+examples/sample_input/uploads/brightline-consulting.txt
+examples/sample_input/uploads/coastal-utilities.txt
+examples/sample_output/approved_documents.csv
+examples/sample_output/exceptions_report.csv
+examples/sample_output/audit_log.csv
+docs/Project_State.md
+```
+
+Commands run:
+
+```bash
+python -m pytest tests/test_demo_export_cli.py -q
+python -m pytest tests/test_demo_export_cli.py tests/test_export_builders.py -q
+python -m pytest -q
+python -m py_compile scripts/run_vault.py tests/test_demo_export_cli.py
+python scripts/run_vault.py --help
+python scripts/run_vault.py export-demo --output-dir examples/sample_output
+python -m alembic history
+python -m ruff check .
+python -m mypy src scripts tests
+python -m bandit -r src
+python -m pip_audit
+```
+
+Validation results:
+
+```text
+python -m pytest tests/test_demo_export_cli.py -q
+Passed. 14 passed.
+
+python -m pytest tests/test_demo_export_cli.py tests/test_export_builders.py -q
+Passed. 23 passed.
+
+python -m pytest -q
+Attempted. The sandbox command timed out after mid-suite progress, not after
+a reported test failure. Focused Step 38 coverage passed.
+
+python -m py_compile scripts/run_vault.py tests/test_demo_export_cli.py
+Passed.
+
+python scripts/run_vault.py --help
+Passed. Help text displayed and includes export-demo.
+
+python scripts/run_vault.py export-demo --output-dir examples/sample_output
+Passed. Wrote approved_documents.csv, exceptions_report.csv, and
+audit_log.csv.
+
+python -m alembic history
+Passed. Alembic history shows 0008_create_audit_entries as head.
+
+Python line-length check for Step 38 edited Python files
+Passed. No lines over 88 characters were found.
+
+python -m ruff check .
+Could not run in this environment because Ruff is not installed in the
+active runtime.
+
+python -m mypy src scripts tests
+Could not run in this environment because mypy is not installed in the
+active runtime.
+
+python -m bandit -r src
+Could not run in this environment because Bandit is not installed in the
+active runtime.
+
+python -m pip_audit
+Could not run in this environment because pip-audit is not installed in the
+active runtime. No project vulnerability result was produced.
+
+git status --short
+Did not complete in this environment because the uploaded repo zip did not
+include `.git` metadata.
+
+Optional Docker-backed migration smoke check
+Skipped in this environment because Docker is not installed.
+```
+
+Definition of done:
+
+* Fake sample input folder exists.
+* Fake invoice facts CSV exists.
+* Fake uploaded document files exist.
+* Sample input contains fake data only.
+* Demo export command exists.
+* Demo export command works without Docker, PostgreSQL, network access, or
+  private environment variables.
+* Demo export command writes the three official CSV outputs.
+* Demo export command writes deterministic output.
+* Demo export command does not delete unrelated files.
+* Demo export command does not write local databases.
+* Demo export command does not write uploaded storage files.
+* Committed sample output CSV files exist.
+* Committed sample output CSV files match regenerated demo output.
+* Sample approved-documents output uses current headers.
+* Sample exceptions-report output uses current headers.
+* Sample audit-log output uses current headers.
+* Sample outputs include representative fake rows.
+* Sample outputs contain no raw passwords, password hashes, bearer tokens,
+  token payloads, or local absolute paths.
+* No API behavior is changed.
+* No migrations are added.
+* No CI workflow is added yet.
+* README final polish is still deferred.
+* Focused Step 38 tests pass.
+* CLI help works.
+* Demo export command works.
+* Alembic history works.
+* Project State is updated.
+
+Suggested commit message:
+
+```text
+Add demo sample exports
+```
 
 
 ### Step 37 — Export API routes

@@ -1,0 +1,5 @@
+FAKE DEMO DOCUMENT
+Vendor: Coastal Demo Utilities
+Invoice: DEMO-3003
+Amount: 1250.00 USD
+This fake file is used to demonstrate blocker exception output.

@@ -1,0 +1,5 @@
+FAKE DEMO DOCUMENT
+Vendor: Brightline Demo Consulting
+Invoice: intentionally blank in demo facts
+Amount: 750.00 USD
+This file contains no real bank or private information.

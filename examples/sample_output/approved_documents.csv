@@ -1,0 +1,3 @@
+document_id,original_filename,status,vendor_name,invoice_number,invoice_date,due_date,amount_cents,currency,category,memo,created_at
+aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa,acme-office-supplies.txt,approved,Acme Demo Office Supplies,DEMO-1001,2026-01-05,2026-02-04,24875,USD,Office Supplies,Fake demo invoice for paper and toner.,2026-01-06T14:30:00+00:00
+bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb,brightline-consulting.txt,approved,,,,,,,,,2026-01-07T09:15:00+00:00

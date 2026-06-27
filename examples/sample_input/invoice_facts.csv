@@ -1,0 +1,4 @@
+vendor_name,invoice_number,invoice_date,amount_cents,currency,category,due_date,memo
+Acme Demo Office Supplies,DEMO-1001,2026-01-05,24875,USD,Office Supplies,2026-02-04,Fake demo invoice for paper and toner.
+Brightline Demo Consulting,,2026-01-07,75000,USD,Professional Services,,Fake demo row with a missing invoice number.
+Coastal Demo Utilities,DEMO-3003,2026-01-08,125000,USD,Utilities,2026-01-28,Fake high amount row for exception reporting.

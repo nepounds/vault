@@ -1,0 +1,3 @@
+document_id,original_filename,document_status,flag_id,flag_type,severity,reason,created_at
+cccccccc-cccc-4ccc-8ccc-cccccccccccc,coastal-utilities.txt,needs_info,dddddddd-dddd-4ddd-8ddd-dddddddddddd,high_amount,blocker,Fake invoice amount is above the demo review threshold.,2026-01-08T11:00:00+00:00
+bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb,brightline-consulting.txt,approved,eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee,missing_invoice_date,warning,Fake demo invoice is missing an invoice date.,2026-01-07T10:45:00+00:00
