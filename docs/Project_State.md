@@ -37,11 +37,11 @@ Project-control rule:
 
 ## Current status
 
-Current step: Step 29 — Review decision model and migration.
+Current step: Step 30 — Review decision service.
 
 Status: Complete with documented environment limitations.
 
-Approximate project completion: 90%.
+Approximate project completion: 92%.
 
 Current summary:
 
@@ -717,20 +717,52 @@ Current summary:
   table and its supporting indexes.
 * The create-review-decisions migration downgrade drops only the
   `review_decisions` table after dropping its supporting indexes.
-* No membership management API routes, document download routes, review service
-  behavior, review API routes, document status transitions, audit logs,
-  exports, refresh tokens, password reset, email verification, CI files,
-  sample outputs, local databases beyond metadata migrations, or application
-  container were added.
+* `src/vault/reviews/service.py` provides typed review decision service
+  behavior.
+* `create_review_decision()` creates one `ReviewDecision` record for a supplied
+  document ID.
+* Review decision creation loads the linked document by ID before writing the
+  decision.
+* Missing target documents raise a safe custom review not-found exception.
+* Review decision creation stores document ID, reviewer user ID, decision,
+  reason, and generated metadata.
+* Review decision creation trims decision and reason values.
+* Review decision creation rejects blank decisions, blank reasons,
+  whitespace-only reasons, unsupported decisions, and `pending` decisions.
+* A reason is required for approved, rejected, and needs-info decisions.
+* Review decision records are added to the supplied session and flushed so IDs
+  are available.
+* Review decision creation does not commit automatically.
+* Review decision creation updates the linked document status: `approved` maps
+  to `approved`, `rejected` maps to `rejected`, and `needs_info` maps to
+  `needs_info`.
+* Multiple review decisions for the same document remain allowed.
+* Later review decisions can update the document status again.
+* `list_review_decisions()` returns only review decisions for the requested
+  document.
+* Review decision listing is deterministic, oldest first by `created_at`, with
+  `id` as a tie-breaker.
+* `get_review_decision()` scopes lookup by both document ID and review decision
+  ID.
+* `require_review_decision()` raises a safe custom exception when a scoped
+  review decision is missing.
+* Review decisions from another document are not returned by scoped lookup.
+* Review decision service behavior does not verify organization membership;
+  future route dependencies will own organization access.
+* Review decision service behavior does not write audit entries yet.
+* No membership management API routes, document download routes, review API
+  routes, audit logs, exports, refresh tokens, password reset, email
+  verification, CI files, sample outputs, local databases beyond metadata
+  migrations, or application container were added.
 
 Current validation status:
 
 ```text
-Step 29 validation was run in the uploaded runtime with partial tooling
+Step 30 validation was run in the uploaded runtime with partial tooling
 limitations.
 
-python -m pytest tests/test_review_decision_model.py   tests/test_alembic_config.py -q
-Passed. 42 passed.
+python -m pytest tests/test_review_decision_service.py -q
+Passed. 29 passed.
 
 python -m pytest -q
 Attempted. The sandbox command timed out after mid-suite progress, not after a
@@ -766,10 +798,10 @@ Passed. 40 passed.
 python -m pytest tests/test_organization_create_api.py   tests/test_organization_models.py   tests/test_organization_rbac_dependency.py -q
 Passed. 54 passed.
 
-python -m pytest tests/test_organization_service.py   tests/test_package_import.py tests/test_passwords.py   tests/test_upload_validation.py tests/test_user_model.py   tests/test_user_service.py -q
-Passed. 59 passed.
+python -m pytest tests/test_organization_service.py   tests/test_package_import.py tests/test_passwords.py   tests/test_review_decision_model.py   tests/test_review_decision_service.py tests/test_upload_validation.py   tests/test_user_model.py tests/test_user_service.py -q
+Passed. 103 passed.
 
-python -m py_compile src/vault/reviews/__init__.py   src/vault/reviews/decisions.py src/vault/reviews/models.py   src/vault/models.py alembic/versions/0007_create_review_decisions.py   tests/test_review_decision_model.py tests/test_alembic_config.py
+python -m py_compile src/vault/reviews/__init__.py   src/vault/reviews/decisions.py src/vault/reviews/models.py   src/vault/reviews/service.py src/vault/exceptions.py   tests/test_review_decision_service.py
 Passed.
 
 python scripts/run_vault.py --help
@@ -821,7 +853,7 @@ Validation rule:
 Next planned step:
 
 ```text
-Step 30 — Review decision service.
+Step 31 — Review decision API route.
 ```
 
 
@@ -996,6 +1028,189 @@ Suggested commit message:
 
 ```text
 Add review decision model
+```
+
+
+
+### Step 30 — Review decision service
+
+Status: Complete with documented environment limitations.
+
+Goal:
+
+* Add a directly testable review decision service that records required review
+  decisions and updates the linked document status, without adding API routes
+  or audit logging yet.
+
+Completed work:
+
+* Added `src/vault/reviews/service.py`.
+* Added typed `create_review_decision()` service behavior.
+* The service accepts a SQLAlchemy `Session`, document ID, reviewer user ID,
+  decision, and reason.
+* The service loads the target `Document` by document ID.
+* Missing target documents raise `ReviewDecisionNotFoundError`.
+* The service creates a `ReviewDecision` record with document ID, reviewer user
+  ID, decision, reason, and generated metadata.
+* The service trims decision and reason values.
+* Blank decisions are rejected.
+* Blank reasons are rejected.
+* Whitespace-only reasons are rejected.
+* Unsupported decisions are rejected.
+* `pending` is rejected as a review decision.
+* A reason is required for approved, rejected, and needs-info decisions.
+* The decision-to-status mapping is explicit and readable.
+* `approved` review decisions update the linked document status to `approved`.
+* `rejected` review decisions update the linked document status to `rejected`.
+* `needs_info` review decisions update the linked document status to
+  `needs_info`.
+* Review decision records are added to the supplied session.
+* The service flushes so generated review decision IDs are available.
+* The service does not commit automatically.
+* Multiple review decisions for the same document are still allowed.
+* Later review decisions may update the document status again.
+* The service does not verify organization membership yet.
+* The service does not write audit entries yet.
+* Added typed `list_review_decisions()` helper.
+* Listing returns only decisions for the requested document.
+* Listing uses deterministic oldest-first ordering by `created_at`, with `id`
+  as a tie-breaker.
+* Added typed `get_review_decision()` helper.
+* Detail lookup scopes by both document ID and review decision ID.
+* Added typed `require_review_decision()` helper.
+* Required lookup raises `ReviewDecisionNotFoundError` when a scoped decision is
+  missing.
+* Review decisions from another document are not returned by scoped lookup.
+* Added `ReviewDecisionValidationError` in `src/vault/exceptions.py`.
+* Added `ReviewDecisionNotFoundError` in `src/vault/exceptions.py`.
+* Added `tests/test_review_decision_service.py`.
+* Existing Step 1 through Step 29 behavior remains compatible in the tested
+  groups.
+* No review API routes, organization route-level review permissions, audit
+  logging, CSV exports, sample output, CI files, local databases, migrations,
+  or application container were added.
+
+Files created or edited:
+
+```text
+src/vault/reviews/service.py
+src/vault/exceptions.py
+tests/test_review_decision_service.py
+docs/Project_State.md
+```
+
+Commands run:
+
+```bash
+python -m pytest tests/test_review_decision_service.py -q
+python -m pytest -q
+python -m pytest tests/test_alembic_config.py tests/test_api_health.py   tests/test_auth_login_api.py tests/test_auth_login_service.py   tests/test_auth_me_api.py tests/test_auth_registration_api.py -q
+python -m pytest tests/test_auth_tokens.py tests/test_config.py   tests/test_control_flag_model.py tests/test_control_flag_service.py -q
+python -m pytest tests/test_control_flags_api.py -q
+python -m pytest tests/test_current_user_dependency.py   tests/test_database_config.py tests/test_document_fact_model.py   tests/test_document_fact_service.py -q
+python -m pytest tests/test_document_facts_api.py -q
+python -m pytest tests/test_document_model.py tests/test_document_read_api.py -q
+python -m pytest tests/test_document_service.py tests/test_document_storage.py   tests/test_document_upload_api.py -q
+python -m pytest tests/test_duplicate_detection_api.py -q
+python -m pytest tests/test_duplicate_detection_service.py   tests/test_organization_access_service.py -q
+python -m pytest tests/test_organization_create_api.py   tests/test_organization_models.py tests/test_organization_rbac_dependency.py -q
+python -m pytest tests/test_organization_service.py   tests/test_package_import.py tests/test_passwords.py   tests/test_review_decision_model.py tests/test_review_decision_service.py   tests/test_upload_validation.py tests/test_user_model.py   tests/test_user_service.py -q
+python -m py_compile src/vault/reviews/__init__.py   src/vault/reviews/decisions.py src/vault/reviews/models.py   src/vault/reviews/service.py src/vault/exceptions.py   tests/test_review_decision_service.py
+python scripts/run_vault.py --help
+python -m alembic history
+python -m ruff check .
+python -m mypy src scripts tests
+python -m bandit -r src
+python -m pip_audit
+git status --short
+docker --version
+```
+
+Validation results:
+
+```text
+python -m pytest tests/test_review_decision_service.py -q
+Passed. 29 passed.
+
+python -m pytest -q
+Attempted. The sandbox command timed out after mid-suite progress, not after a
+reported test failure. The suite was then run in smaller groups.
+
+Focused pytest groups
+Passed. The groups listed in Current validation status all passed.
+
+python -m py_compile ...
+Passed.
+
+python scripts/run_vault.py --help
+Passed. Help text displayed.
+
+python -m alembic history
+Passed. Alembic history shows 0007_create_review_decisions as head.
+
+python -m ruff check .
+Could not run in this environment because Ruff is not installed in the active
+runtime.
+
+python -m mypy src scripts tests
+Could not run in this environment because mypy is not installed in the active
+runtime.
+
+python -m bandit -r src
+Could not run in this environment because Bandit is not installed in the active
+runtime.
+
+python -m pip_audit
+Could not run in this environment because pip-audit is not installed in the
+active runtime. No project vulnerability result was produced.
+
+git status --short
+Did not complete in this environment because the uploaded repo zip did not
+include `.git` metadata.
+
+Optional Docker-backed migration smoke check
+Skipped in this environment because Docker is not installed.
+```
+
+Definition of done:
+
+* Review decision service exists.
+* Service creates a `ReviewDecision` record.
+* Service validates required review fields.
+* Service rejects blank decisions.
+* Service rejects blank reasons.
+* Service rejects unsupported decisions.
+* Service rejects `pending` as a review decision.
+* Service requires a reason for every decision.
+* Service trims simple review metadata strings.
+* Service flushes so generated IDs are available.
+* Service does not commit automatically.
+* Service updates document status for approved, rejected, and needs-info
+  decisions.
+* Multiple review decisions for the same document are still allowed.
+* Later review decisions can update document status again.
+* Review decision listing helper exists.
+* Review decision detail helper exists.
+* Required review decision helper exists.
+* Review decision lookup is scoped by document ID and review decision ID.
+* Review decisions from another document are not leaked.
+* No review API route is added yet.
+* No audit logging is added yet.
+* No exports are added yet.
+* No migrations are added in this step.
+* Tests cover creation, validation, status transitions, duplicate history
+  allowance, listing, scoped lookup, and safe not-found behavior.
+* Existing tests were validated in smaller groups due to sandbox timeout.
+* Pytest groups pass.
+* CLI help works.
+* Alembic history works.
+* Project State is updated.
+* No generated private/local files are included.
+
+Suggested commit message:
+
+```text
+Add review decision service
 ```
 
 

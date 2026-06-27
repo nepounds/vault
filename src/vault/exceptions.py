@@ -71,3 +71,11 @@ class ControlFlagValidationError(VaultError):
 
 class ControlFlagNotFoundError(VaultError):
     """Raised when requested control flag metadata cannot be found."""
+
+class ReviewDecisionValidationError(VaultError):
+    """Raised when review decision data fails service validation."""
+
+
+class ReviewDecisionNotFoundError(VaultError):
+    """Raised when requested review decision metadata cannot be found."""
+
