@@ -37,11 +37,11 @@ Project-control rule:
 
 ## Current status
 
-Current step: Step 34 — Wire audit entries into state-changing services.
+Current step: Step 35 — Audit API route.
 
 Status: Complete with documented environment limitations.
 
-Approximate project completion: 96%.
+Approximate project completion: 97%.
 
 Current summary:
 
@@ -875,40 +875,67 @@ Current summary:
   scoped lookup.
 * Organization-null audit entries are not returned through organization-scoped
   detail lookup.
-* Audit service behavior does not verify organization membership; future route
-  dependencies will own organization access.
+* Audit service behavior does not verify organization membership directly;
+  organization access is enforced through route dependencies.
+* Audit service listing supports optional action, entity type, and entity ID
+  filters while preserving organization scope.
 * Audit service tests use safe metadata examples that avoid raw passwords,
   password hashes, bearer tokens, token payloads, and local absolute file paths.
+* `src/vault/audit/schemas.py` defines safe audit response metadata.
+* Audit API responses include `id`, `organization_id`, `actor_user_id`,
+  `action`, `entity_type`, `entity_id`, `summary`, `metadata_json`, and
+  `created_at`.
+* Audit API response metadata remains structured while redacting risky
+  password, password-hash, bearer-token, token-payload, and local absolute
+  stored-path values.
+* `src/vault/api/routes/audit.py` provides organization-scoped audit list
+  and detail API routes.
+* `GET /organizations/{organization_id}/audit` exists.
+* `GET /organizations/{organization_id}/audit/{audit_entry_id}` exists.
+* Audit routes require authentication through the existing current-user
+  dependency chain.
+* Audit routes require organization membership through the reusable
+  organization RBAC dependency.
+* Audit list and detail routes explicitly allow owners, reviewers, and
+  viewers.
+* Audit list and detail routes reject non-members and unknown organizations
+  with the existing safe HTTP 403 organization-access behavior.
+* Audit list calls `list_audit_entries()`.
+* Audit detail calls `require_audit_entry()`.
+* Audit detail lookup is scoped by both organization ID and audit entry ID.
+* Audit routes do not return audit entries from other organizations.
+* Audit routes do not return organization-null audit entries.
+* Missing audit entry detail returns HTTP 404 with a safe public message.
+* Audit read routes do not write audit entries.
 * Step 34 wires audit entry creation into the important state-changing API
-  workflows without adding audit API routes, exports, sample outputs, CI files,
-  migrations, or README final polish.
-* No membership management API routes, document download routes, audit logs,
-  exports, refresh tokens, password reset, email
-  verification, CI files, sample outputs, local databases beyond metadata
-  migrations, or application container were added.
+  workflows.
+* Step 35 adds audit API routes without adding exports, sample outputs, CI
+  files, migrations, or README final polish.
+* No membership management API routes, document download routes, audit log
+  exports, refresh tokens, password reset, email verification, CI files, sample
+  outputs, local databases beyond metadata migrations, or application container
+  were added.
 
 Current validation status:
 
 ```text
-Step 33 validation was run in the uploaded runtime with partial tooling
+Step 35 validation was run in the uploaded runtime with partial tooling
 limitations.
 
-python -m pytest tests/test_audit_entry_service.py -q
-Passed. 45 passed.
+python -m pytest tests/test_audit_api.py -q
+Passed. 42 passed.
 
-python -m pytest tests/test_audit_entry_model.py tests/test_audit_entry_service.py tests/test_alembic_config.py -q
-Passed. 95 passed.
+python -m pytest tests/test_audit_entry_service.py -q
+Passed. 49 passed.
+
+python -m pytest tests/test_audit_api.py tests/test_audit_entry_service.py -q
+Passed. 91 passed.
 
 python -m pytest -q
 Attempted. The sandbox command timed out after mid-suite progress, not after a
-reported test failure. The suite was then run in smaller focused groups.
+reported test failure. Focused Step 35 coverage passed.
 
-Focused pytest groups
-Passed. All available test files were covered in smaller groups. The grouped
-runs passed with counts including 136, 114, 55, 40, 43, 79, 72, 54, 20, 45,
-and 83 passed.
-
-python -m py_compile src/vault/audit/service.py tests/test_audit_entry_service.py src/vault/exceptions.py
+python -m py_compile src/vault/api/main.py src/vault/api/routes/audit.py src/vault/audit/schemas.py src/vault/audit/service.py tests/test_audit_api.py
 Passed.
 
 python scripts/run_vault.py --help
@@ -917,7 +944,7 @@ Passed. Help text displayed.
 python -m alembic history
 Passed. Alembic history shows 0008_create_audit_entries as head.
 
-Python line-length check for Step 33 edited Python files
+Python line-length check for Step 35 edited Python files
 Passed. No lines over 88 characters were found.
 
 python -m ruff check .
@@ -963,9 +990,193 @@ Validation rule:
 Next planned step:
 
 ```text
-Step 35 — Audit API route.
+Step 36 — CSV export builders.
 ```
 
+
+
+### Step 35 — Audit API route
+
+Status: Complete with documented environment limitations.
+
+Goal:
+
+* Add authenticated, organization-scoped audit API routes that allow
+  organization members to list audit entries and read one audit entry detail
+  safely, without adding CSV exports yet.
+
+Completed work:
+
+* Added `src/vault/audit/schemas.py`.
+* Added `AuditEntryResponse` with safe audit metadata fields.
+* Audit responses include `id`, `organization_id`, `actor_user_id`, `action`,
+  `entity_type`, `entity_id`, `summary`, `metadata_json`, and `created_at`.
+* Audit response metadata remains structured.
+* Audit response metadata redacts risky raw-password, password-hash,
+  bearer-token, token-payload, and local absolute stored-path values.
+* Added `src/vault/api/routes/audit.py`.
+* Included the audit router in the FastAPI app factory.
+* Added `GET /organizations/{organization_id}/audit`.
+* Added `GET /organizations/{organization_id}/audit/{audit_entry_id}`.
+* Audit routes require authentication through the existing current-user
+  dependency chain.
+* Audit routes require organization membership through the existing
+  `require_organization_roles()` dependency factory.
+* Audit list and detail explicitly allow owners, reviewers, and viewers.
+* Non-members cannot list or read audit entries.
+* Unknown organizations continue to return the existing safe HTTP 403
+  organization-access behavior.
+* Missing, invalid, expired, and inactive-user tokens continue to return
+  HTTP 401 before audit route behavior runs.
+* Audit listing calls `list_audit_entries()`.
+* Audit detail calls `require_audit_entry()`.
+* Audit detail lookup scopes by both organization ID and audit entry ID.
+* Audit entries from another organization are not returned.
+* Organization-null audit entries are not returned through organization-scoped
+  audit routes.
+* Missing audit entry detail returns HTTP 404 with a safe public message.
+* Audit list responses use deterministic service ordering, newest first by
+  `created_at`, then `id`.
+* Added optional audit list filters for `action`, `entity_type`, and
+  `entity_id`.
+* Audit filters remain organization-scoped.
+* Unsupported action and entity type filters return HTTP 400 with safe
+  messages.
+* Audit read routes do not write audit entries.
+* No CSV exports, approved-document export route, exception export route, audit
+  log export route, sample input/output generation, demo seed command, CI,
+  README final polish, migrations, or table changes were added.
+
+Files created or edited:
+
+```text
+src/vault/api/main.py
+src/vault/api/routes/audit.py
+src/vault/audit/schemas.py
+src/vault/audit/service.py
+tests/test_audit_api.py
+tests/test_audit_entry_service.py
+docs/Project_State.md
+```
+
+Commands run:
+
+```bash
+python -m pytest tests/test_audit_api.py -q
+python -m pytest tests/test_audit_entry_service.py -q
+python -m pytest tests/test_audit_api.py tests/test_audit_entry_service.py -q
+python -m pytest -q
+python -m py_compile src/vault/api/main.py src/vault/api/routes/audit.py src/vault/audit/schemas.py src/vault/audit/service.py tests/test_audit_api.py
+python scripts/run_vault.py --help
+python -m alembic history
+python -m ruff check .
+python -m mypy src scripts tests
+python -m bandit -r src
+python -m pip_audit
+git status --short
+docker --version
+```
+
+Validation results:
+
+```text
+python -m pytest tests/test_audit_api.py -q
+Passed. 42 passed.
+
+python -m pytest tests/test_audit_entry_service.py -q
+Passed. 49 passed.
+
+python -m pytest tests/test_audit_api.py tests/test_audit_entry_service.py -q
+Passed. 91 passed.
+
+python -m pytest -q
+Attempted. The sandbox command timed out after mid-suite progress, not after a
+reported test failure. Focused Step 35 coverage passed.
+
+python -m py_compile ...
+Passed.
+
+Python line-length check for Step 35 edited Python files
+Passed. No lines over 88 characters were found.
+
+python scripts/run_vault.py --help
+Passed. Help text displayed.
+
+python -m alembic history
+Passed. Alembic history shows 0008_create_audit_entries as head.
+
+python -m ruff check .
+Could not run in this environment because Ruff is not installed in the active
+runtime.
+
+python -m mypy src scripts tests
+Could not run in this environment because mypy is not installed in the active
+runtime.
+
+python -m bandit -r src
+Could not run in this environment because Bandit is not installed in the active
+runtime.
+
+python -m pip_audit
+Could not run in this environment because pip-audit is not installed in the
+active runtime. No project vulnerability result was produced.
+
+git status --short
+Did not complete in this environment because the uploaded repo zip did not
+include `.git` metadata.
+
+Optional Docker-backed migration smoke check
+Skipped in this environment because Docker is not installed.
+```
+
+Definition of done:
+
+* Audit response schema exists.
+* Audit route module exists.
+* Audit router is included in the FastAPI app.
+* `GET /organizations/{organization_id}/audit` exists.
+* `GET /organizations/{organization_id}/audit/{audit_entry_id}` exists.
+* Audit routes require authentication.
+* Audit routes require organization membership.
+* Owners can list and read audit entries.
+* Reviewers can list and read audit entries.
+* Viewers can list and read audit entries.
+* Non-members cannot list or read audit entries.
+* Missing, invalid, expired, and inactive-user tokens return authentication
+  errors.
+* Unknown organizations return safe organization access errors.
+* Audit listing is scoped to the requested organization.
+* Audit listing does not leak another organization's entries.
+* Audit listing excludes organization-null entries.
+* Audit detail lookup is scoped by organization ID and audit entry ID.
+* Audit detail does not leak another organization's entries.
+* Audit detail does not return organization-null entries.
+* Missing audit detail returns safe not-found behavior.
+* Audit responses return safe audit metadata.
+* Audit responses do not expose raw passwords.
+* Audit responses do not expose password hashes.
+* Audit responses do not expose bearer tokens.
+* Audit responses do not expose token payloads.
+* Audit responses do not expose local absolute stored paths.
+* Audit read routes do not create audit entries.
+* Routes appear in OpenAPI.
+* No exports are added yet.
+* No sample outputs are added yet.
+* No migrations are added in this step.
+* Tests cover successful list/detail, role behavior, auth failure,
+  organization scoping, safe responses, no audit-on-read behavior, OpenAPI,
+  and filter behavior.
+* Focused Step 35 tests pass.
+* CLI help works.
+* Alembic history works.
+* Project State is updated.
+* No generated private/local files are included.
+
+Suggested commit message:
+
+```text
+Add audit API routes
+```
 
 
 ### Step 34 — Wire audit entries into state-changing services

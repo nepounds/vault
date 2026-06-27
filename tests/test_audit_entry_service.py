@@ -715,3 +715,95 @@ def test_audit_metadata_examples_do_not_include_local_absolute_paths() -> None:
     assert "C:\\" not in text
     assert "/home/" not in text
     assert "/Users/" not in text
+
+
+def test_list_audit_entries_can_filter_by_action(
+    session: Session,
+    organization: Organization,
+    actor: User,
+) -> None:
+    matching = create_valid_audit_entry(
+        session,
+        organization=organization,
+        actor=actor,
+        action=AuditAction.DOCUMENT_UPLOADED.value,
+        entity_type=AuditEntityType.DOCUMENT.value,
+    )
+    create_valid_audit_entry(
+        session,
+        organization=organization,
+        actor=actor,
+        action=AuditAction.REVIEW_DECISION_CREATED.value,
+        entity_type=AuditEntityType.REVIEW_DECISION.value,
+    )
+
+    assert list_audit_entries(
+        session,
+        organization_id=organization.id,
+        action=AuditAction.DOCUMENT_UPLOADED.value,
+    ) == [matching]
+
+
+def test_list_audit_entries_can_filter_by_entity_type(
+    session: Session,
+    organization: Organization,
+    actor: User,
+) -> None:
+    matching = create_valid_audit_entry(
+        session,
+        organization=organization,
+        actor=actor,
+        action=AuditAction.DOCUMENT_UPLOADED.value,
+        entity_type=AuditEntityType.DOCUMENT.value,
+    )
+    create_valid_audit_entry(
+        session,
+        organization=organization,
+        actor=actor,
+        action=AuditAction.REVIEW_DECISION_CREATED.value,
+        entity_type=AuditEntityType.REVIEW_DECISION.value,
+    )
+
+    assert list_audit_entries(
+        session,
+        organization_id=organization.id,
+        entity_type=AuditEntityType.DOCUMENT.value,
+    ) == [matching]
+
+
+def test_list_audit_entries_can_filter_by_entity_id(
+    session: Session,
+    organization: Organization,
+    actor: User,
+) -> None:
+    matching_entity_id = uuid.uuid4()
+    matching = create_valid_audit_entry(
+        session,
+        organization=organization,
+        actor=actor,
+        entity_id=matching_entity_id,
+    )
+    create_valid_audit_entry(
+        session,
+        organization=organization,
+        actor=actor,
+        entity_id=uuid.uuid4(),
+    )
+
+    assert list_audit_entries(
+        session,
+        organization_id=organization.id,
+        entity_id=matching_entity_id,
+    ) == [matching]
+
+
+def test_list_audit_entries_filter_validation_rejects_unsupported_values(
+    session: Session,
+    organization: Organization,
+) -> None:
+    with pytest.raises(AuditEntryValidationError):
+        list_audit_entries(
+            session,
+            organization_id=organization.id,
+            action="unsupported_action",
+        )

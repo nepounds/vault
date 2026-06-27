@@ -9,14 +9,14 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
-from vault.audit.actions import AuditAction
-from vault.audit.entities import AuditEntityType
-from vault.audit.service import AuditMetadataValue, create_audit_entry
 from vault.api.dependencies import (
     get_current_user,
     get_database_session,
     require_organization_roles,
 )
+from vault.audit.actions import AuditAction
+from vault.audit.entities import AuditEntityType
+from vault.audit.service import AuditMetadataValue, create_audit_entry
 from vault.auth.models import User
 from vault.config import load_settings
 from vault.controls.models import ControlFlag

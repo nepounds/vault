@@ -70,11 +70,22 @@ def list_audit_entries(
     session: Session,
     *,
     organization_id: UUID,
+    action: str | None = None,
+    entity_type: str | None = None,
+    entity_id: UUID | None = None,
 ) -> list[AuditEntry]:
     """List audit entries for one organization, newest first."""
+    filters = [AuditEntry.organization_id == organization_id]
+    if action is not None:
+        filters.append(AuditEntry.action == _validate_action(action))
+    if entity_type is not None:
+        filters.append(AuditEntry.entity_type == _validate_entity_type(entity_type))
+    if entity_id is not None:
+        filters.append(AuditEntry.entity_id == entity_id)
+
     statement = (
         select(AuditEntry)
-        .where(AuditEntry.organization_id == organization_id)
+        .where(*filters)
         .order_by(AuditEntry.created_at.desc(), AuditEntry.id.desc())
     )
 
