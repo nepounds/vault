@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from vault.audit.models import AuditEntry
 from vault.auth.models import User
 from vault.controls.models import ControlFlag
 from vault.database import Base
@@ -10,6 +11,7 @@ from vault.organizations.models import Membership, Organization
 from vault.reviews.models import ReviewDecision
 
 __all__ = [
+    "AuditEntry",
     "Base",
     "ControlFlag",
     "Document",

@@ -7,9 +7,10 @@ from collections.abc import Iterator
 from typing import Any
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session, sessionmaker
 
+from vault.audit.models import AuditEntry
 from vault.auth.models import User
 from vault.auth.service import create_user
 from vault.documents.models import Document
@@ -637,4 +638,6 @@ def test_service_does_not_create_audit_entries_yet(
         reviewer=reviewer,
     )
 
-    assert "audit_entries" not in Base.metadata.tables
+    audit_count = session.scalar(select(func.count()).select_from(AuditEntry))
+
+    assert audit_count == 0

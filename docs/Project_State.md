@@ -37,11 +37,11 @@ Project-control rule:
 
 ## Current status
 
-Current step: Step 31 — Review decision API route.
+Current step: Step 32 — Audit entry model and migration.
 
 Status: Complete with documented environment limitations.
 
-Approximate project completion: 93%.
+Approximate project completion: 94%.
 
 Current summary:
 
@@ -796,6 +796,51 @@ Current summary:
   API.
 * Later review decisions can update the document status again through the API.
 * Review decision API routes do not write audit entries yet.
+* `src/vault/audit/actions.py` defines official audit action values:
+  `user_registered`, `organization_created`, `document_uploaded`,
+  `document_fact_created`, `control_flags_generated`,
+  `duplicate_flags_generated`, `review_decision_created`,
+  `document_status_changed`, and `export_generated`.
+* `src/vault/audit/entities.py` defines official audit entity type values:
+  `user`, `organization`, `document`, `document_fact`, `control_flag`,
+  `review_decision`, and `export`.
+* `src/vault/audit/models.py` defines the initial `AuditEntry` ORM model.
+* The `AuditEntry` model includes `id`, `organization_id`,
+  `actor_user_id`, `action`, `entity_type`, `entity_id`, `summary`,
+  `metadata_json`, and `created_at`.
+* Audit entry IDs use UUID primary keys.
+* Audit entry timestamps use the same UTC-aware application-side timestamp
+  default as existing user, organization, document, fact, control, and review
+  models.
+* Audit entries can optionally link to organizations through a nullable
+  foreign key from `audit_entries.organization_id` to `organizations.id`.
+* Audit entries can optionally link to actor users through a nullable foreign
+  key from `audit_entries.actor_user_id` to `users.id`.
+* `entity_id` is nullable and intentionally has no foreign key because the
+  paired `entity_type` can refer to multiple tables.
+* Audit entry metadata requires `action`, `entity_type`, `summary`,
+  `metadata_json`, and `created_at`.
+* Audit entry metadata uses SQLAlchemy `JSON` for `metadata_json` with a safe
+  empty-object default.
+* Audit entry metadata uses reasonable string lengths for action, entity type,
+  and summary.
+* Audit entry metadata includes check constraints for official action values
+  and official entity type values.
+* Audit entry lookup indexes exist for organization ID, actor user ID, action,
+  entity type, and created-at timestamp.
+* Audit entry future-query indexes exist on organization ID plus created-at and
+  entity type plus entity ID.
+* Shared SQLAlchemy model metadata imports `AuditEntry`, so Alembic target
+  metadata includes the `audit_entries` table.
+* A create-audit-entries migration exists at
+  `alembic/versions/0008_create_audit_entries.py`.
+* The create-audit-entries migration creates only the `audit_entries` table and
+  its supporting indexes.
+* The create-audit-entries migration downgrade drops only the `audit_entries`
+  table after dropping its supporting indexes.
+* No audit entry creation service, audit API route, export behavior, sample
+  output, CI file, or state-changing service audit wiring was added in Step
+  32.
 * No membership management API routes, document download routes, audit logs,
   exports, refresh tokens, password reset, email
   verification, CI files, sample outputs, local databases beyond metadata
@@ -804,60 +849,33 @@ Current summary:
 Current validation status:
 
 ```text
-Step 31 validation was run in the uploaded runtime with partial tooling
+Step 32 validation was run in the uploaded runtime with partial tooling
 limitations.
 
-python -m pytest tests/test_review_decision_api.py -q
-Passed. 45 passed.
-
-python -m pytest tests/test_review_decision_service.py -q
-Passed. 29 passed.
+python -m pytest tests/test_audit_entry_model.py tests/test_alembic_config.py -q
+Passed. 50 passed.
 
 python -m pytest -q
 Attempted. The sandbox command timed out after mid-suite progress, not after a
-reported test failure. To compensate, the suite was run in smaller groups.
+reported test failure. Focused audit and Alembic coverage passed.
 
 python -m pytest tests/test_alembic_config.py tests/test_api_health.py   tests/test_auth_login_api.py tests/test_auth_login_service.py   tests/test_auth_me_api.py tests/test_auth_registration_api.py -q
-Passed. 68 passed.
+Passed. 71 passed.
 
 python -m pytest tests/test_auth_tokens.py tests/test_config.py   tests/test_control_flag_model.py tests/test_control_flag_service.py -q
 Passed. 65 passed.
 
-python -m pytest tests/test_control_flags_api.py -q
-Passed. 42 passed.
-
-python -m pytest tests/test_current_user_dependency.py   tests/test_database_config.py tests/test_document_fact_model.py   tests/test_document_fact_service.py -q
-Passed. 62 passed.
-
-python -m pytest tests/test_document_facts_api.py -q
-Passed. 40 passed.
-
-python -m pytest tests/test_document_model.py tests/test_document_read_api.py -q
-Passed. 43 passed.
-
-python -m pytest tests/test_document_service.py   tests/test_document_storage.py tests/test_document_upload_api.py -q
-Passed. 79 passed.
-
-python -m pytest tests/test_duplicate_detection_api.py -q
-Passed. 32 passed.
-
-python -m pytest tests/test_duplicate_detection_service.py   tests/test_organization_access_service.py -q
-Passed. 40 passed.
-
-python -m pytest tests/test_organization_create_api.py   tests/test_organization_models.py tests/test_organization_rbac_dependency.py -q
-Passed. 54 passed.
-
-python -m pytest tests/test_organization_service.py   tests/test_package_import.py tests/test_passwords.py   tests/test_review_decision_model.py tests/test_review_decision_service.py   tests/test_upload_validation.py tests/test_user_model.py tests/test_user_service.py -q
-Passed. 103 passed.
-
-python -m py_compile src/vault/api/routes/documents.py   src/vault/reviews/schemas.py src/vault/reviews/service.py   src/vault/exceptions.py tests/test_review_decision_api.py   tests/test_review_decision_service.py
+python -m py_compile src/vault/audit/__init__.py   src/vault/audit/actions.py src/vault/audit/entities.py   src/vault/audit/models.py src/vault/models.py   alembic/versions/0008_create_audit_entries.py   tests/test_audit_entry_model.py tests/test_alembic_config.py
 Passed.
 
 python scripts/run_vault.py --help
 Passed. Help text displayed.
 
 python -m alembic history
-Passed. Alembic history shows 0007_create_review_decisions as head.
+Passed. Alembic history shows 0008_create_audit_entries as head.
+
+Python line-length check for Step 32 edited Python files
+Passed. No lines over 88 characters were found.
 
 python -m ruff check .
 Could not run in this environment because Ruff is not installed in the active
@@ -902,7 +920,7 @@ Validation rule:
 Next planned step:
 
 ```text
-Step 32 — Audit entry model and migration.
+Step 33 — Audit entry service.
 ```
 
 
@@ -1450,6 +1468,190 @@ Suggested commit message:
 
 ```text
 Add review decision API route
+```
+
+
+### Step 32 — Audit entry model and migration
+
+Status: Complete with documented environment limitations.
+
+Goal:
+
+* Add the initial `AuditEntry` SQLAlchemy model and one Alembic migration that
+  creates the `audit_entries` table, without adding audit service or API
+  behavior yet.
+
+Completed work:
+
+* Added `src/vault/audit/__init__.py`.
+* Added `src/vault/audit/actions.py`.
+* Defined official audit action values as `user_registered`,
+  `organization_created`, `document_uploaded`, `document_fact_created`,
+  `control_flags_generated`, `duplicate_flags_generated`,
+  `review_decision_created`, `document_status_changed`, and
+  `export_generated`.
+* Added `src/vault/audit/entities.py`.
+* Defined official audit entity type values as `user`, `organization`,
+  `document`, `document_fact`, `control_flag`, `review_decision`, and
+  `export`.
+* Added `src/vault/audit/models.py`.
+* Added a typed SQLAlchemy 2-style `AuditEntry` ORM model.
+* Added the official audit entry fields: `id`, `organization_id`,
+  `actor_user_id`, `action`, `entity_type`, `entity_id`, `summary`,
+  `metadata_json`, and `created_at`.
+* Used UUID primary keys for audit entries.
+* Used the existing UTC-aware timestamp helper for `created_at`.
+* Made `organization_id`, `actor_user_id`, and `entity_id` nullable for future
+  account-level, system-generated, export, or mixed-entity events.
+* Added a foreign key from `audit_entries.organization_id` to
+  `organizations.id`.
+* Added a foreign key from `audit_entries.actor_user_id` to `users.id`.
+* Intentionally did not add a foreign key for `entity_id` because entity ID can
+  point to different tables depending on entity type.
+* Required `action`, `entity_type`, `summary`, `metadata_json`, and
+  `created_at`.
+* Used SQLAlchemy `JSON` for `metadata_json`.
+* Added a safe empty-object model default for `metadata_json`.
+* Added reasonable string lengths for action, entity type, and summary.
+* Added audit action and entity type check constraints.
+* Added lookup indexes for organization ID, actor user ID, action, entity type,
+  and created-at timestamp.
+* Added composite indexes for organization ID plus created-at and entity type
+  plus entity ID.
+* Did not add uniqueness constraints.
+* Updated `src/vault/models.py` so shared model metadata imports `AuditEntry`.
+* Added `alembic/versions/0008_create_audit_entries.py`.
+* The migration creates only the `audit_entries` table and supporting indexes.
+* The migration downgrade drops only the supporting indexes and
+  `audit_entries` table.
+* Added `tests/test_audit_entry_model.py`.
+* Updated `tests/test_alembic_config.py` for the new migration file and
+  Alembic target metadata.
+* Existing Step 1 through Step 31 behavior remains compatible in the focused
+  tested groups.
+* No audit service, audit API route, state-changing service audit wiring, CSV
+  exports, sample output, CI files, local databases, or application container
+  were added.
+
+Files created or edited:
+
+```text
+src/vault/audit/__init__.py
+src/vault/audit/actions.py
+src/vault/audit/entities.py
+src/vault/audit/models.py
+src/vault/models.py
+alembic/versions/0008_create_audit_entries.py
+tests/test_audit_entry_model.py
+tests/test_alembic_config.py
+docs/Project_State.md
+```
+
+Commands run:
+
+```bash
+python -m pytest tests/test_audit_entry_model.py tests/test_alembic_config.py -q
+python -m pytest -q
+python -m pytest tests/test_alembic_config.py tests/test_api_health.py   tests/test_auth_login_api.py tests/test_auth_login_service.py   tests/test_auth_me_api.py tests/test_auth_registration_api.py -q
+python -m pytest tests/test_auth_tokens.py tests/test_config.py   tests/test_control_flag_model.py tests/test_control_flag_service.py -q
+python -m py_compile src/vault/audit/__init__.py   src/vault/audit/actions.py src/vault/audit/entities.py   src/vault/audit/models.py src/vault/models.py   alembic/versions/0008_create_audit_entries.py   tests/test_audit_entry_model.py tests/test_alembic_config.py
+python scripts/run_vault.py --help
+python -m alembic history
+python -m ruff check .
+python -m mypy src scripts tests
+python -m bandit -r src
+python -m pip_audit
+git status --short
+docker --version
+```
+
+Validation results:
+
+```text
+python -m pytest tests/test_audit_entry_model.py tests/test_alembic_config.py -q
+Passed. 50 passed.
+
+python -m pytest -q
+Attempted. The sandbox command timed out after mid-suite progress, not after a
+reported test failure. Focused audit and Alembic coverage passed.
+
+python -m pytest tests/test_alembic_config.py tests/test_api_health.py   tests/test_auth_login_api.py tests/test_auth_login_service.py   tests/test_auth_me_api.py tests/test_auth_registration_api.py -q
+Passed. 71 passed.
+
+python -m pytest tests/test_auth_tokens.py tests/test_config.py   tests/test_control_flag_model.py tests/test_control_flag_service.py -q
+Passed. 65 passed.
+
+python -m py_compile ...
+Passed.
+
+python scripts/run_vault.py --help
+Passed. Help text displayed.
+
+python -m alembic history
+Passed. Alembic history shows 0008_create_audit_entries as head.
+
+Python line-length check for Step 32 edited Python files
+Passed. No lines over 88 characters were found.
+
+python -m ruff check .
+Could not run in this environment because Ruff is not installed in the active
+runtime.
+
+python -m mypy src scripts tests
+Could not run in this environment because mypy is not installed in the active
+runtime.
+
+python -m bandit -r src
+Could not run in this environment because Bandit is not installed in the active
+runtime.
+
+python -m pip_audit
+Could not run in this environment because pip-audit is not installed in the
+active runtime. No project vulnerability result was produced.
+
+git status --short
+Did not complete in this environment because the uploaded repo zip did not
+include `.git` metadata.
+
+Optional Docker-backed migration smoke check
+Skipped in this environment because Docker is not installed.
+```
+
+Definition of done:
+
+* `AuditEntry` ORM model exists.
+* `audit_entries` table metadata matches Project State fields.
+* `organization_id` can link audit entries to organizations and is nullable.
+* `actor_user_id` can link audit entries to users and is nullable.
+* `entity_id` is nullable and does not have a foreign key.
+* Required audit fields are non-null.
+* Official audit action values are defined.
+* Official audit entity type values are defined.
+* Audit action constraint exists.
+* Audit entity type constraint exists.
+* Useful lookup indexes exist.
+* Composite future-query indexes exist.
+* Shared model metadata includes `audit_entries`.
+* Alembic target metadata includes `audit_entries`.
+* Migration `0008_create_audit_entries.py` exists.
+* Migration creates only `audit_entries` and supporting indexes.
+* Migration downgrade drops only `audit_entries` and supporting indexes.
+* No audit service is added yet.
+* No audit API route is added yet.
+* Existing state-changing services do not write audit entries yet.
+* No exports are added yet.
+* Tests cover model structure, official values, constraints, indexes, metadata,
+  and migration presence.
+* Focused pytest groups pass.
+* CLI help works.
+* Alembic history works.
+* Project State is updated.
+* No generated private/local files are included.
+
+Suggested commit message:
+
+```text
+Add audit entry model
 ```
 
 

@@ -10,12 +10,13 @@ from typing import cast
 import pytest
 from fastapi.testclient import TestClient
 from httpx import Response
-from sqlalchemy import create_engine, inspect, select
+from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from vault.api.dependencies import get_database_session
 from vault.api.main import create_app
+from vault.audit.models import AuditEntry
 from vault.auth.models import User
 from vault.auth.service import create_user
 from vault.auth.tokens import create_access_token
@@ -892,5 +893,6 @@ def test_review_routes_do_not_create_audit_entries_yet(
         user=cast(User, review_setup["owner"]),
     )
 
-    inspector = inspect(db_session.get_bind())
-    assert "audit_entries" not in inspector.get_table_names()
+    audit_count = db_session.scalar(select(func.count()).select_from(AuditEntry))
+
+    assert audit_count == 0
