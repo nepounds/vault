@@ -37,11 +37,11 @@ Project-control rule:
 
 ## Current status
 
-Current step: Step 36 — CSV export builders.
+Current step: Step 37 — Export API routes.
 
 Status: Complete with documented environment limitations.
 
-Approximate project completion: 98%.
+Approximate project completion: 99%.
 
 Current summary:
 
@@ -932,30 +932,52 @@ Current summary:
   hashes, bearer tokens, token payloads, and local absolute stored paths.
 * Empty exports return header-only CSV text.
 * CSV escaping is delegated to the Python standard-library `csv` module.
-* No export API routes, sample output files, demo seed command, migrations, CI,
-  or README final polish were added in Step 36.
-* No membership management API routes, document download routes, export API
-  routes, refresh tokens, password reset, email verification, CI files, sample
-  outputs, local databases beyond metadata migrations, or application container
-  were added.
+* `src/vault/api/routes/exports.py` provides organization-scoped CSV export
+  routes.
+* `GET /organizations/{organization_id}/exports/approved-documents` exists.
+* `GET /organizations/{organization_id}/exports/exceptions-report` exists.
+* `GET /organizations/{organization_id}/exports/audit-log` exists.
+* Export routes require authentication and organization membership.
+* Export routes explicitly allow owners and reviewers.
+* Export routes reject viewers, non-members, and unknown organizations with
+  safe access behavior.
+* Export routes return CSV responses with safe attachment filenames.
+* Approved-document export responses include approved same-organization
+  documents only and include structured fact fields where present.
+* Exception-report export responses include same-organization control flags
+  only.
+* Audit-log export responses include same-organization audit entries only and
+  exclude organization-null entries.
+* Successful export routes create safe `export_generated` audit entries in the
+  same request session before commit.
+* Export-generated audit entries use entity type `export`, no entity ID,
+  organization scope, actor user ID, export type, filename, and row count.
+* Export audit metadata does not include full CSV contents.
+* Failed and unauthorized export attempts do not create audit entries.
+* Export routes do not write CSV files to disk.
+* No sample output files, demo seed command, migrations, CI, or README final
+  polish were added in Step 37.
+* No membership management API routes, document download routes, refresh
+  tokens, password reset, email verification, CI files, sample outputs, local
+  databases beyond metadata migrations, or application container were added.
 
 Current validation status:
 
 ```text
-Step 36 validation was run in the uploaded runtime with partial tooling
+Step 37 validation was run in the uploaded runtime with partial tooling
 limitations.
 
-python -m pytest tests/test_export_builders.py -q
-Passed. 9 passed.
+python -m pytest tests/test_export_api.py -q
+Passed. 23 passed.
 
-python -m pytest tests/test_audit_entry_service.py tests/test_export_builders.py -q
-Passed. 58 passed.
+python -m pytest tests/test_export_api.py tests/test_export_builders.py -q
+Passed. 32 passed.
 
 python -m pytest -q
 Attempted. The sandbox command timed out after mid-suite progress, not after a
-reported test failure. Focused Step 36 coverage passed.
+reported test failure. Focused Step 37 coverage passed.
 
-python -m py_compile src/vault/exports/__init__.py src/vault/exports/schemas.py src/vault/exports/builders.py src/vault/exports/service.py src/vault/audit/service.py tests/test_export_builders.py
+python -m py_compile src/vault/api/main.py src/vault/api/routes/exports.py tests/test_export_api.py
 Passed.
 
 python scripts/run_vault.py --help
@@ -964,7 +986,7 @@ Passed. Help text displayed.
 python -m alembic history
 Passed. Alembic history shows 0008_create_audit_entries as head.
 
-Python line-length check for Step 36 edited Python files
+Python line-length check for Step 37 edited Python files
 Passed. No lines over 88 characters were found.
 
 python -m ruff check .
@@ -1010,9 +1032,194 @@ Validation rule:
 Next planned step:
 
 ```text
-Step 37 — Export API routes.
+Step 38 — Sample input/output and demo export command.
 ```
 
+
+
+
+### Step 37 — Export API routes
+
+Status: Complete with documented environment limitations.
+
+Goal:
+
+* Add authenticated, organization-scoped export API routes that return
+  approved documents, exception reports, and audit logs as downloadable CSV
+  responses, with safe `export_generated` audit entries for successful exports.
+
+Completed work:
+
+* Added `src/vault/api/routes/exports.py`.
+* Included the export router in the FastAPI app factory.
+* Added `GET /organizations/{organization_id}/exports/approved-documents`.
+* Added `GET /organizations/{organization_id}/exports/exceptions-report`.
+* Added `GET /organizations/{organization_id}/exports/audit-log`.
+* Export routes require authentication through the existing current-user
+  dependency chain.
+* Export routes require organization membership through the existing
+  `require_organization_roles()` dependency factory.
+* Export routes explicitly allow owners and reviewers.
+* Export routes reject viewers, non-members, and unknown organizations.
+* Missing, invalid, expired, unknown-user, and inactive-user bearer tokens
+  return HTTP 401 before export behavior runs.
+* Export routes call the Step 36 export row helpers and CSV builders.
+* Export routes return in-memory CSV text responses with media type `text/csv`.
+* Export routes set safe attachment filenames: `approved_documents.csv`,
+  `exceptions_report.csv`, and `audit_log.csv`.
+* Approved-documents export includes approved same-organization documents only.
+* Approved-documents export excludes pending, rejected, and needs-info
+  documents.
+* Approved-documents export includes structured fact fields where present.
+* Exception-report export includes same-organization control flags only.
+* Audit-log export includes same-organization audit entries only.
+* Audit-log export excludes organization-null audit entries.
+* Empty exports return header-only CSV responses.
+* Export responses do not expose raw passwords, password hashes, bearer tokens,
+  token payload values, or local absolute stored paths.
+* Each successful export creates one `export_generated` audit entry.
+* Export-generated audit entries are scoped to the requested organization.
+* Export-generated audit entries use the authenticated user as actor.
+* Export-generated audit entries use entity type `export` and no entity ID.
+* Export-generated audit metadata includes export type, filename, and row count.
+* Export-generated audit metadata does not include full CSV contents.
+* Unauthorized, non-member, unknown-organization, and viewer-denied attempts do
+  not create export audit entries.
+* Export routes do not write CSV files to disk.
+* Export routes appear in OpenAPI.
+* Added `tests/test_export_api.py`.
+* Tests cover successful exports, owner/reviewer access, viewer and non-member
+  denial, authentication failure, unknown organizations, stable headers, media
+  type, attachment filenames, organization scoping, empty exports, safe
+  responses, export audit entry creation, no audit on denied attempts, no file
+  writes, and OpenAPI inclusion.
+* No sample input files, sample output files, demo seed command, demo export
+  command, migrations, CI files, README final polish, frontend, dashboard, or
+  table changes were added.
+
+Files created or edited:
+
+```text
+src/vault/api/main.py
+src/vault/api/routes/exports.py
+tests/test_export_api.py
+docs/Project_State.md
+```
+
+Commands run:
+
+```bash
+python -m pytest tests/test_export_api.py -q
+python -m pytest tests/test_export_api.py tests/test_export_builders.py -q
+python -m pytest -q
+python -m py_compile src/vault/api/main.py src/vault/api/routes/exports.py tests/test_export_api.py
+python scripts/run_vault.py --help
+python -m alembic history
+python -m ruff check .
+python -m mypy src scripts tests
+python -m bandit -r src
+python -m pip_audit
+git status --short
+docker --version
+```
+
+Validation results:
+
+```text
+python -m pytest tests/test_export_api.py -q
+Passed. 23 passed.
+
+python -m pytest tests/test_export_api.py tests/test_export_builders.py -q
+Passed. 32 passed.
+
+python -m pytest -q
+Attempted. The sandbox command timed out after mid-suite progress, not after a
+reported test failure. Focused Step 37 coverage passed.
+
+python -m py_compile ...
+Passed.
+
+python scripts/run_vault.py --help
+Passed. Help text displayed.
+
+python -m alembic history
+Passed. Alembic history shows 0008_create_audit_entries as head.
+
+Python line-length check for Step 37 edited Python files
+Passed. No lines over 88 characters were found.
+
+python -m ruff check .
+Could not run in this environment because Ruff is not installed in the active
+runtime.
+
+python -m mypy src scripts tests
+Could not run in this environment because mypy is not installed in the active
+runtime.
+
+python -m bandit -r src
+Could not run in this environment because Bandit is not installed in the active
+runtime.
+
+python -m pip_audit
+Could not run in this environment because pip-audit is not installed in the
+active runtime. No project vulnerability result was produced.
+
+git status --short
+Did not complete in this environment because the uploaded repo zip did not
+include `.git` metadata.
+
+Optional Docker-backed migration smoke check
+Skipped in this environment because Docker is not installed.
+```
+
+Definition of done:
+
+* Export route module exists.
+* Export router is included in the FastAPI app.
+* Approved-documents export route exists.
+* Exceptions-report export route exists.
+* Audit-log export route exists.
+* Export routes require authentication.
+* Export routes require organization membership.
+* Owners can generate exports.
+* Reviewers can generate exports.
+* Viewers cannot generate exports.
+* Non-members cannot generate exports.
+* Missing, invalid, expired, unknown-user, and inactive-user tokens return
+  authentication errors.
+* Unknown organizations return safe organization access errors.
+* Export routes return `text/csv`.
+* Export routes set safe attachment filenames.
+* Approved-documents route returns approved-document CSV.
+* Exceptions-report route returns exception-report CSV.
+* Audit-log route returns audit-log CSV.
+* Empty exports return header-only CSV responses.
+* Export routes preserve organization boundaries.
+* Export responses do not leak another organization's data.
+* Export responses do not expose raw passwords, password hashes, bearer tokens,
+  token payload values, or local absolute stored paths.
+* Successful export routes create safe `export_generated` audit entries.
+* Export audit entries use official action and entity type values.
+* Export audit entries are scoped to the correct organization.
+* Export audit metadata includes export type, filename, and row count.
+* Export audit metadata does not include full CSV contents.
+* Failed and unauthorized export attempts do not create audit entries.
+* Export routes appear in OpenAPI.
+* Export routes do not write files to disk.
+* No sample input files are added yet.
+* No sample output files are generated yet.
+* No migrations are added in this step.
+* Focused Step 37 tests pass.
+* CLI help works.
+* Alembic history works.
+* Project State is updated.
+* No generated private/local files are included.
+
+Suggested commit message:
+
+```text
+Add export API routes
+```
 
 
 ### Step 36 — CSV export builders
