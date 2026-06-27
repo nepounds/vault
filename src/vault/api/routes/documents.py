@@ -46,9 +46,20 @@ from vault.exceptions import (
     DocumentNotFoundError,
     DocumentUploadValidationError,
     DocumentValidationError,
+    ReviewDecisionNotFoundError,
+    ReviewDecisionValidationError,
 )
 from vault.organizations.models import Membership
 from vault.organizations.roles import MembershipRole
+from vault.reviews.schemas import (
+    ReviewDecisionCreateRequest,
+    ReviewDecisionResponse,
+)
+from vault.reviews.service import (
+    create_review_decision,
+    list_review_decisions,
+    require_review_decision,
+)
 
 router = APIRouter(prefix="/organizations", tags=["documents"])
 
@@ -364,6 +375,120 @@ def read_control_flag_detail(
         ) from exc
 
     return ControlFlagResponse.model_validate(flag)
+
+
+@router.post(
+    "/{organization_id}/documents/{document_id}/review",
+    response_model=ReviewDecisionResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_review_decision_route(
+    organization_id: UUID,
+    document_id: UUID,
+    request: ReviewDecisionCreateRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_database_session)],
+    _membership: UploadMembership,
+) -> ReviewDecisionResponse:
+    """Create one review decision for an organization-scoped document."""
+    try:
+        document = require_document_for_organization(
+            session,
+            organization_id=organization_id,
+            document_id=document_id,
+        )
+        review_decision = create_review_decision(
+            session,
+            document_id=document.id,
+            reviewer_user_id=current_user.id,
+            decision=request.decision,
+            reason=request.reason,
+        )
+        session.commit()
+        session.refresh(review_decision)
+        session.refresh(document)
+    except DocumentNotFoundError as exc:
+        session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document was not found.",
+        ) from exc
+    except ReviewDecisionValidationError as exc:
+        session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    return ReviewDecisionResponse.model_validate(review_decision)
+
+
+@router.get(
+    "/{organization_id}/documents/{document_id}/reviews",
+    response_model=list[ReviewDecisionResponse],
+)
+def list_review_decisions_route(
+    organization_id: UUID,
+    document_id: UUID,
+    session: Annotated[Session, Depends(get_database_session)],
+    _membership: ReadMembership,
+) -> list[ReviewDecisionResponse]:
+    """List safe review decision metadata for one document."""
+    try:
+        document = require_document_for_organization(
+            session,
+            organization_id=organization_id,
+            document_id=document_id,
+        )
+    except DocumentNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document was not found.",
+        ) from exc
+
+    review_decisions = list_review_decisions(session, document_id=document.id)
+
+    return [
+        ReviewDecisionResponse.model_validate(review_decision)
+        for review_decision in review_decisions
+    ]
+
+
+@router.get(
+    "/{organization_id}/documents/{document_id}/reviews/{review_decision_id}",
+    response_model=ReviewDecisionResponse,
+)
+def read_review_decision_detail(
+    organization_id: UUID,
+    document_id: UUID,
+    review_decision_id: UUID,
+    session: Annotated[Session, Depends(get_database_session)],
+    _membership: ReadMembership,
+) -> ReviewDecisionResponse:
+    """Return safe metadata for one document-scoped review decision."""
+    try:
+        document = require_document_for_organization(
+            session,
+            organization_id=organization_id,
+            document_id=document_id,
+        )
+        review_decision = require_review_decision(
+            session,
+            document_id=document.id,
+            review_decision_id=review_decision_id,
+        )
+    except DocumentNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document was not found.",
+        ) from exc
+    except ReviewDecisionNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Review decision was not found.",
+        ) from exc
+
+    return ReviewDecisionResponse.model_validate(review_decision)
 
 
 @router.post(

@@ -37,11 +37,11 @@ Project-control rule:
 
 ## Current status
 
-Current step: Step 30 — Review decision service.
+Current step: Step 31 — Review decision API route.
 
 Status: Complete with documented environment limitations.
 
-Approximate project completion: 92%.
+Approximate project completion: 93%.
 
 Current summary:
 
@@ -750,16 +750,65 @@ Current summary:
 * Review decision service behavior does not verify organization membership;
   future route dependencies will own organization access.
 * Review decision service behavior does not write audit entries yet.
-* No membership management API routes, document download routes, review API
-  routes, audit logs, exports, refresh tokens, password reset, email
+* `src/vault/reviews/schemas.py` defines safe request and response schemas for
+  review decision APIs.
+* Review decision creation requests include `decision` and `reason`.
+* Review decision API responses include safe metadata only: `id`, `document_id`,
+  `reviewer_user_id`, `decision`, `reason`, and `created_at`.
+* Review decision API responses do not include local absolute stored paths, raw
+  passwords, password hashes, or token internals.
+* `POST /organizations/{organization_id}/documents/{document_id}/review` exists
+  and returns HTTP 201 on successful review decision creation.
+* `GET /organizations/{organization_id}/documents/{document_id}/reviews` exists
+  and returns safe review decision metadata for one organization-scoped
+  document.
+* `GET /organizations/{organization_id}/documents/{document_id}/reviews/{review_decision_id}`
+  exists and returns safe metadata for one document-scoped review decision.
+* Review decision API routes require a valid bearer token for an active user.
+* Review decision API routes require organization membership through the
+  reusable organization RBAC dependency.
+* Review decision creation explicitly allows owners and reviewers.
+* Review decision creation rejects viewers, non-members, and unknown
+  organizations.
+* Review decision list and detail routes explicitly allow owners, reviewers,
+  and viewers.
+* Review decision list and detail routes reject non-members and unknown
+  organizations with the existing safe HTTP 403 organization-access behavior.
+* Missing, invalid, expired, unknown-user, and inactive-user bearer tokens
+  continue to return HTTP 401 before review route behavior runs.
+* Review routes verify the path document belongs to the path organization before
+  creating, listing, or reading review decisions.
+* Documents from another organization are not accepted through review routes,
+  even when the document ID exists.
+* Missing documents in an accessible organization return HTTP 404 with a safe
+  public message.
+* Review creation calls `create_review_decision()`.
+* Review listing calls `list_review_decisions()`.
+* Review detail calls `require_review_decision()`.
+* Successful review creation commits and refreshes the created review decision
+  and linked document before returning.
+* Review validation errors return HTTP 400 with safe public messages.
+* Missing review detail returns HTTP 404 with a safe public message.
+* Review detail lookup is scoped by both document ID and review decision ID.
+* Review decisions from other documents or organizations are not leaked through
+  list or detail routes.
+* Multiple review decisions for the same document remain allowed through the
+  API.
+* Later review decisions can update the document status again through the API.
+* Review decision API routes do not write audit entries yet.
+* No membership management API routes, document download routes, audit logs,
+  exports, refresh tokens, password reset, email
   verification, CI files, sample outputs, local databases beyond metadata
   migrations, or application container were added.
 
 Current validation status:
 
 ```text
-Step 30 validation was run in the uploaded runtime with partial tooling
+Step 31 validation was run in the uploaded runtime with partial tooling
 limitations.
+
+python -m pytest tests/test_review_decision_api.py -q
+Passed. 45 passed.
 
 python -m pytest tests/test_review_decision_service.py -q
 Passed. 29 passed.
@@ -783,7 +832,7 @@ Passed. 62 passed.
 python -m pytest tests/test_document_facts_api.py -q
 Passed. 40 passed.
 
-python -m pytest tests/test_document_model.py   tests/test_document_read_api.py -q
+python -m pytest tests/test_document_model.py tests/test_document_read_api.py -q
 Passed. 43 passed.
 
 python -m pytest tests/test_document_service.py   tests/test_document_storage.py tests/test_document_upload_api.py -q
@@ -795,13 +844,13 @@ Passed. 32 passed.
 python -m pytest tests/test_duplicate_detection_service.py   tests/test_organization_access_service.py -q
 Passed. 40 passed.
 
-python -m pytest tests/test_organization_create_api.py   tests/test_organization_models.py   tests/test_organization_rbac_dependency.py -q
+python -m pytest tests/test_organization_create_api.py   tests/test_organization_models.py tests/test_organization_rbac_dependency.py -q
 Passed. 54 passed.
 
-python -m pytest tests/test_organization_service.py   tests/test_package_import.py tests/test_passwords.py   tests/test_review_decision_model.py   tests/test_review_decision_service.py tests/test_upload_validation.py   tests/test_user_model.py tests/test_user_service.py -q
+python -m pytest tests/test_organization_service.py   tests/test_package_import.py tests/test_passwords.py   tests/test_review_decision_model.py tests/test_review_decision_service.py   tests/test_upload_validation.py tests/test_user_model.py tests/test_user_service.py -q
 Passed. 103 passed.
 
-python -m py_compile src/vault/reviews/__init__.py   src/vault/reviews/decisions.py src/vault/reviews/models.py   src/vault/reviews/service.py src/vault/exceptions.py   tests/test_review_decision_service.py
+python -m py_compile src/vault/api/routes/documents.py   src/vault/reviews/schemas.py src/vault/reviews/service.py   src/vault/exceptions.py tests/test_review_decision_api.py   tests/test_review_decision_service.py
 Passed.
 
 python scripts/run_vault.py --help
@@ -853,7 +902,7 @@ Validation rule:
 Next planned step:
 
 ```text
-Step 31 — Review decision API route.
+Step 32 — Audit entry model and migration.
 ```
 
 
@@ -1211,6 +1260,196 @@ Suggested commit message:
 
 ```text
 Add review decision service
+```
+
+
+### Step 31 — Review decision API route
+
+Status: Complete with documented environment limitations.
+
+Goal:
+
+* Add authenticated, organization-scoped review decision API routes that allow
+  owners and reviewers to submit review decisions for existing documents, and
+  allow owners, reviewers, and viewers to list and read safe review metadata.
+
+Completed work:
+
+* Added `src/vault/reviews/schemas.py`.
+* Added `ReviewDecisionCreateRequest` with `decision` and `reason`.
+* Added `ReviewDecisionResponse` with safe review metadata fields only.
+* Updated the existing documents router with review decision routes.
+* Added `POST /organizations/{organization_id}/documents/{document_id}/review`.
+* Added `GET /organizations/{organization_id}/documents/{document_id}/reviews`.
+* Added `GET /organizations/{organization_id}/documents/{document_id}/reviews/{review_decision_id}`.
+* Review routes require authentication through the existing current-user
+  dependency chain.
+* Review routes require organization membership through the existing
+  `require_organization_roles()` dependency factory.
+* Review creation explicitly allows owners and reviewers.
+* Review creation rejects viewers, non-members, and unknown organizations.
+* Review listing and detail explicitly allow owners, reviewers, and viewers.
+* Review listing and detail reject non-members and unknown organizations with
+  the existing safe HTTP 403 behavior.
+* Review routes verify the path document belongs to the path organization before
+  creating, listing, or reading review decisions.
+* Documents from another organization are rejected through review routes.
+* Missing documents in an accessible organization return HTTP 404 with a safe
+  public message.
+* Review creation calls the Step 30 `create_review_decision()` service.
+* Review listing calls the Step 30 `list_review_decisions()` service.
+* Review detail calls the Step 30 `require_review_decision()` service.
+* Successful review creation commits and refreshes the created review decision
+  and linked document.
+* Review validation errors return HTTP 400 with safe public messages.
+* Missing review detail returns HTTP 404 with a safe public message.
+* Review responses include only `id`, `document_id`, `reviewer_user_id`,
+  `decision`, `reason`, and `created_at`.
+* Review responses do not expose local absolute stored paths, raw passwords,
+  password hashes, or token internals.
+* Multiple review decisions for the same document remain allowed through the
+  API.
+* Later review decisions can update document status again through the API.
+* Added `tests/test_review_decision_api.py`.
+* Tests cover successful review creation, role behavior, authentication
+  failures, validation failures, status transitions, organization scoping,
+  document scoping, review scoping, safe responses, OpenAPI inclusion, and the
+  absence of audit entries in this step.
+* Existing Step 1 through Step 30 behavior remains compatible in the tested
+  groups.
+* No audit logging, CSV exports, sample output, CI files, local databases,
+  migrations, or application container were added.
+
+Files created or edited:
+
+```text
+src/vault/api/routes/documents.py
+src/vault/reviews/schemas.py
+src/vault/exceptions.py
+tests/test_review_decision_api.py
+docs/Project_State.md
+```
+
+Commands run:
+
+```bash
+python -m pytest tests/test_review_decision_api.py -q
+python -m pytest tests/test_review_decision_service.py -q
+python -m pytest -q
+python -m pytest tests/test_alembic_config.py tests/test_api_health.py   tests/test_auth_login_api.py tests/test_auth_login_service.py   tests/test_auth_me_api.py tests/test_auth_registration_api.py -q
+python -m pytest tests/test_auth_tokens.py tests/test_config.py   tests/test_control_flag_model.py tests/test_control_flag_service.py -q
+python -m pytest tests/test_control_flags_api.py -q
+python -m pytest tests/test_current_user_dependency.py   tests/test_database_config.py tests/test_document_fact_model.py   tests/test_document_fact_service.py -q
+python -m pytest tests/test_document_facts_api.py -q
+python -m pytest tests/test_document_model.py tests/test_document_read_api.py -q
+python -m pytest tests/test_document_service.py   tests/test_document_storage.py tests/test_document_upload_api.py -q
+python -m pytest tests/test_duplicate_detection_api.py -q
+python -m pytest tests/test_duplicate_detection_service.py   tests/test_organization_access_service.py -q
+python -m pytest tests/test_organization_create_api.py   tests/test_organization_models.py tests/test_organization_rbac_dependency.py -q
+python -m pytest tests/test_organization_service.py   tests/test_package_import.py tests/test_passwords.py   tests/test_review_decision_model.py tests/test_review_decision_service.py   tests/test_upload_validation.py tests/test_user_model.py tests/test_user_service.py -q
+python -m py_compile src/vault/api/routes/documents.py   src/vault/reviews/schemas.py src/vault/reviews/service.py   src/vault/exceptions.py tests/test_review_decision_api.py   tests/test_review_decision_service.py
+python scripts/run_vault.py --help
+python -m alembic history
+python -m ruff check .
+python -m mypy src scripts tests
+python -m bandit -r src
+python -m pip_audit
+git status --short
+docker --version
+```
+
+Validation results:
+
+```text
+python -m pytest tests/test_review_decision_api.py -q
+Passed. 45 passed.
+
+python -m pytest tests/test_review_decision_service.py -q
+Passed. 29 passed.
+
+python -m pytest -q
+Attempted. The sandbox command timed out after mid-suite progress, not after a
+reported test failure. The suite was then run in smaller groups.
+
+Focused pytest groups
+Passed. The groups listed in Current validation status all passed.
+
+python -m py_compile ...
+Passed.
+
+python scripts/run_vault.py --help
+Passed. Help text displayed.
+
+python -m alembic history
+Passed. Alembic history shows 0007_create_review_decisions as head.
+
+python -m ruff check .
+Could not run in this environment because Ruff is not installed in the active
+runtime.
+
+python -m mypy src scripts tests
+Could not run in this environment because mypy is not installed in the active
+runtime.
+
+python -m bandit -r src
+Could not run in this environment because Bandit is not installed in the active
+runtime.
+
+python -m pip_audit
+Could not run in this environment because pip-audit is not installed in the
+active runtime. No project vulnerability result was produced.
+
+git status --short
+Did not complete in this environment because the uploaded repo zip did not
+include `.git` metadata.
+
+Optional Docker-backed migration smoke check
+Skipped in this environment because Docker is not installed.
+```
+
+Definition of done:
+
+* Review decision request schema exists.
+* Review decision response schema exists.
+* Review create, list, and detail routes exist.
+* Review routes require authentication.
+* Review routes require organization membership.
+* Owners and reviewers can submit review decisions.
+* Viewers can list and read review decisions.
+* Viewers cannot submit review decisions.
+* Non-members cannot submit, list, or read review decisions.
+* Missing, invalid, expired, unknown-user, and inactive-user tokens return
+  authentication errors.
+* Review creation verifies the document belongs to the organization.
+* Documents from other organizations cannot be used through review routes.
+* Missing documents return safe not-found behavior.
+* Review creation validates review input.
+* Review creation persists a `ReviewDecision` row.
+* Review creation updates document status.
+* Review listing is scoped to the requested document.
+* Review detail lookup is scoped by document ID and review decision ID.
+* Review decisions from other documents are not leaked.
+* Responses return safe review metadata.
+* Routes appear in OpenAPI.
+* Multiple review decisions for the same document are still allowed.
+* Later review decisions can update document status again.
+* No audit logging is added yet.
+* No exports are added yet.
+* No migrations are added in this step.
+* Tests cover successful review creation, role behavior, auth failure,
+  validation failure, status transitions, organization scoping, document
+  scoping, review scoping, safe responses, and OpenAPI inclusion.
+* Existing tests were validated in smaller groups due to sandbox timeout.
+* Pytest groups pass.
+* CLI help works.
+* Alembic history works.
+* Project State is updated.
+* No generated private/local files are included.
+
+Suggested commit message:
+
+```text
+Add review decision API route
 ```
 
 
