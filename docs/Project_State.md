@@ -37,11 +37,11 @@ Project-control rule:
 
 ## Current status
 
-Current step: Step 28 — Duplicate detection API route.
+Current step: Step 29 — Review decision model and migration.
 
 Status: Complete with documented environment limitations.
 
-Approximate project completion: 88%.
+Approximate project completion: 90%.
 
 Current summary:
 
@@ -684,86 +684,99 @@ Current summary:
   flags when same-organization invoice attribute duplicates exist.
 * Duplicate detection generation does not flag cross-organization file hash or
   invoice attribute duplicates.
-* No membership management API routes, document download routes, reviews, audit
-  logs, exports, refresh tokens, password reset, email verification, CI files,
+* `src/vault/reviews/decisions.py` defines official review decision values:
+  `approved`, `rejected`, and `needs_info`.
+* `pending` is not an official review decision value.
+* `src/vault/reviews/models.py` defines the initial `ReviewDecision` ORM model.
+* The `ReviewDecision` model includes `id`, `document_id`,
+  `reviewer_user_id`, `decision`, `reason`, and `created_at`.
+* Review decision IDs use UUID primary keys.
+* Review decision timestamps use the same UTC-aware application-side timestamp
+  default as existing user, organization, document, fact, and control models.
+* Review decisions are connected to documents through a foreign key from
+  `review_decisions.document_id` to `documents.id`.
+* Review decisions are connected to reviewers through a foreign key from
+  `review_decisions.reviewer_user_id` to `users.id`.
+* Review decision metadata requires `document_id`, `reviewer_user_id`,
+  `decision`, `reason`, and `created_at`.
+* Review decision metadata uses reasonable string lengths for decision and
+  reason.
+* Review decision metadata includes a check constraint for the official review
+  decision values.
+* Review decision lookup indexes exist for document ID, reviewer user ID, and
+  decision.
+* Review decision history-query groundwork exists as a non-unique composite
+  index on document ID and created-at timestamp.
+* Multiple review decisions for the same document remain allowed because review
+  history may matter later.
+* Shared SQLAlchemy model metadata imports `ReviewDecision`, so Alembic target
+  metadata includes the `review_decisions` table.
+* A create-review-decisions migration exists at
+  `alembic/versions/0007_create_review_decisions.py`.
+* The create-review-decisions migration creates only the `review_decisions`
+  table and its supporting indexes.
+* The create-review-decisions migration downgrade drops only the
+  `review_decisions` table after dropping its supporting indexes.
+* No membership management API routes, document download routes, review service
+  behavior, review API routes, document status transitions, audit logs,
+  exports, refresh tokens, password reset, email verification, CI files,
   sample outputs, local databases beyond metadata migrations, or application
   container were added.
 
 Current validation status:
 
 ```text
-Step 28 validation was run in the uploaded runtime with partial tooling
+Step 29 validation was run in the uploaded runtime with partial tooling
 limitations.
 
-python -m pytest tests/test_duplicate_detection_api.py -q
-Passed. 32 passed.
-
-python -m pytest tests/test_duplicate_detection_api.py \
-  tests/test_duplicate_detection_service.py -q
-Passed. 56 passed.
-
-python -m pytest tests/test_control_flags_api.py -q
+python -m pytest tests/test_review_decision_model.py   tests/test_alembic_config.py -q
 Passed. 42 passed.
 
 python -m pytest -q
 Attempted. The sandbox command timed out after mid-suite progress, not after a
 reported test failure. To compensate, the suite was run in smaller groups.
 
-python -m pytest tests/test_alembic_config.py tests/test_api_health.py \
-  tests/test_auth_login_api.py tests/test_auth_login_service.py \
-  tests/test_auth_me_api.py tests/test_auth_registration_api.py -q
+python -m pytest tests/test_alembic_config.py tests/test_api_health.py   tests/test_auth_login_api.py tests/test_auth_login_service.py   tests/test_auth_me_api.py tests/test_auth_registration_api.py -q
+Passed. 68 passed.
+
+python -m pytest tests/test_auth_tokens.py tests/test_config.py   tests/test_control_flag_model.py tests/test_control_flag_service.py -q
 Passed. 65 passed.
 
-python -m pytest tests/test_auth_tokens.py tests/test_config.py \
-  tests/test_control_flag_model.py tests/test_control_flag_service.py \
-  tests/test_control_flags_api.py tests/test_current_user_dependency.py -q
-Passed. 114 passed.
+python -m pytest tests/test_control_flags_api.py -q
+Passed. 42 passed.
 
-python -m pytest tests/test_database_config.py \
-  tests/test_document_fact_model.py tests/test_document_fact_service.py -q
-Passed. 55 passed.
+python -m pytest tests/test_current_user_dependency.py   tests/test_database_config.py tests/test_document_fact_model.py   tests/test_document_fact_service.py -q
+Passed. 62 passed.
 
 python -m pytest tests/test_document_facts_api.py -q
 Passed. 40 passed.
 
-python -m pytest tests/test_document_model.py \
-  tests/test_document_read_api.py -q
+python -m pytest tests/test_document_model.py   tests/test_document_read_api.py -q
 Passed. 43 passed.
 
-python -m pytest tests/test_document_service.py \
-  tests/test_document_storage.py tests/test_document_upload_api.py -q
+python -m pytest tests/test_document_service.py   tests/test_document_storage.py tests/test_document_upload_api.py -q
 Passed. 79 passed.
 
-python -m pytest tests/test_duplicate_detection_api.py \
-  tests/test_duplicate_detection_service.py \
-  tests/test_organization_access_service.py -q
-Passed. 72 passed.
+python -m pytest tests/test_duplicate_detection_api.py -q
+Passed. 32 passed.
 
-python -m pytest tests/test_organization_create_api.py \
-  tests/test_organization_models.py \
-  tests/test_organization_rbac_dependency.py -q
+python -m pytest tests/test_duplicate_detection_service.py   tests/test_organization_access_service.py -q
+Passed. 40 passed.
+
+python -m pytest tests/test_organization_create_api.py   tests/test_organization_models.py   tests/test_organization_rbac_dependency.py -q
 Passed. 54 passed.
 
-python -m pytest tests/test_organization_service.py \
-  tests/test_package_import.py tests/test_passwords.py -q
-Passed. 20 passed.
+python -m pytest tests/test_organization_service.py   tests/test_package_import.py tests/test_passwords.py   tests/test_upload_validation.py tests/test_user_model.py   tests/test_user_service.py -q
+Passed. 59 passed.
 
-python -m pytest tests/test_upload_validation.py tests/test_user_model.py \
-  tests/test_user_service.py -q
-Passed. 39 passed.
-
-python -m py_compile src/vault/api/routes/documents.py \
-  src/vault/controls/service.py src/vault/controls/schemas.py \
-  src/vault/exceptions.py tests/test_duplicate_detection_api.py \
-  tests/test_duplicate_detection_service.py
+python -m py_compile src/vault/reviews/__init__.py   src/vault/reviews/decisions.py src/vault/reviews/models.py   src/vault/models.py alembic/versions/0007_create_review_decisions.py   tests/test_review_decision_model.py tests/test_alembic_config.py
 Passed.
 
 python scripts/run_vault.py --help
 Passed. Help text displayed.
 
 python -m alembic history
-Passed. Alembic history shows 0006_create_control_flags as head. No Step 28
-migration was added.
+Passed. Alembic history shows 0007_create_review_decisions as head.
 
 python -m ruff check .
 Could not run in this environment because Ruff is not installed in the active
@@ -808,7 +821,181 @@ Validation rule:
 Next planned step:
 
 ```text
-Step 29 — Review decision model and migration.
+Step 30 — Review decision service.
+```
+
+
+
+### Step 29 — Review decision model and migration
+
+Status: Complete with documented environment limitations.
+
+Goal:
+
+* Add the initial `ReviewDecision` SQLAlchemy model and one Alembic migration
+  that creates the `review_decisions` table, without adding review service or
+  API behavior yet.
+
+Completed work:
+
+* Added `src/vault/reviews/__init__.py`.
+* Added `src/vault/reviews/decisions.py`.
+* Defined official review decision values as `approved`, `rejected`, and
+  `needs_info`.
+* Confirmed `pending` is not an official review decision value.
+* Added `src/vault/reviews/models.py`.
+* Added a typed SQLAlchemy 2-style `ReviewDecision` ORM model.
+* Added the official review decision fields: `id`, `document_id`,
+  `reviewer_user_id`, `decision`, `reason`, and `created_at`.
+* Used UUID primary keys for review decisions.
+* Used the existing UTC-aware timestamp helper for `created_at`.
+* Added non-null constraints for all official review decision fields.
+* Added reasonable string lengths for decision and reason.
+* Added a foreign key from `review_decisions.document_id` to `documents.id`.
+* Added a foreign key from `review_decisions.reviewer_user_id` to `users.id`.
+* Added a review decision check constraint for the official decision values.
+* Added lookup indexes for document ID, reviewer user ID, and decision.
+* Added a non-unique composite index on document ID and created-at timestamp
+  for future review history queries.
+* Did not add a uniqueness constraint, so multiple review decisions for the
+  same document remain allowed.
+* Updated `src/vault/models.py` so shared model metadata imports
+  `ReviewDecision`.
+* Added `alembic/versions/0007_create_review_decisions.py`.
+* The migration creates only the `review_decisions` table and supporting
+  indexes.
+* The migration downgrade drops only the supporting indexes and
+  `review_decisions` table.
+* Added `tests/test_review_decision_model.py`.
+* Updated `tests/test_alembic_config.py` for the new migration file and
+  Alembic target metadata.
+* Existing Step 1 through Step 28 behavior remains compatible in the tested
+  groups.
+* No review service, review API route, document status transitions, audit
+  logging, exports, sample output, CI files, local databases, or application
+  container were added.
+
+Files created or edited:
+
+```text
+src/vault/reviews/__init__.py
+src/vault/reviews/decisions.py
+src/vault/reviews/models.py
+src/vault/models.py
+alembic/versions/0007_create_review_decisions.py
+tests/test_review_decision_model.py
+tests/test_alembic_config.py
+docs/Project_State.md
+```
+
+Commands run:
+
+```bash
+python -m pytest tests/test_review_decision_model.py tests/test_alembic_config.py -q
+python -m pytest -q
+python -m pytest tests/test_alembic_config.py tests/test_api_health.py   tests/test_auth_login_api.py tests/test_auth_login_service.py   tests/test_auth_me_api.py tests/test_auth_registration_api.py -q
+python -m pytest tests/test_auth_tokens.py tests/test_config.py   tests/test_control_flag_model.py tests/test_control_flag_service.py -q
+python -m pytest tests/test_control_flags_api.py -q
+python -m pytest tests/test_current_user_dependency.py   tests/test_database_config.py tests/test_document_fact_model.py   tests/test_document_fact_service.py -q
+python -m pytest tests/test_document_facts_api.py -q
+python -m pytest tests/test_document_model.py tests/test_document_read_api.py -q
+python -m pytest tests/test_document_service.py tests/test_document_storage.py   tests/test_document_upload_api.py -q
+python -m pytest tests/test_duplicate_detection_api.py -q
+python -m pytest tests/test_duplicate_detection_service.py   tests/test_organization_access_service.py -q
+python -m pytest tests/test_organization_create_api.py   tests/test_organization_models.py tests/test_organization_rbac_dependency.py -q
+python -m pytest tests/test_organization_service.py tests/test_package_import.py   tests/test_passwords.py tests/test_upload_validation.py tests/test_user_model.py   tests/test_user_service.py -q
+python -m py_compile src/vault/reviews/__init__.py   src/vault/reviews/decisions.py src/vault/reviews/models.py   src/vault/models.py alembic/versions/0007_create_review_decisions.py   tests/test_review_decision_model.py tests/test_alembic_config.py
+python scripts/run_vault.py --help
+python -m alembic history
+python -m ruff check .
+python -m mypy src scripts tests
+python -m bandit -r src
+python -m pip_audit
+git status --short
+docker --version
+```
+
+Validation results:
+
+```text
+python -m pytest tests/test_review_decision_model.py   tests/test_alembic_config.py -q
+Passed. 42 passed.
+
+python -m pytest -q
+Attempted. The sandbox command timed out after mid-suite progress, not after a
+reported test failure. The suite was then run in smaller groups.
+
+Focused pytest groups
+Passed. The groups listed in Current validation status all passed.
+
+python -m py_compile ...
+Passed.
+
+python scripts/run_vault.py --help
+Passed. Help text displayed.
+
+python -m alembic history
+Passed. Alembic history shows 0007_create_review_decisions as head.
+
+python -m ruff check .
+Could not run in this environment because Ruff is not installed in the active
+runtime.
+
+python -m mypy src scripts tests
+Could not run in this environment because mypy is not installed in the active
+runtime.
+
+python -m bandit -r src
+Could not run in this environment because Bandit is not installed in the active
+runtime.
+
+python -m pip_audit
+Could not run in this environment because pip-audit is not installed in the
+active runtime. No project vulnerability result was produced.
+
+git status --short
+Did not complete in this environment because the uploaded repo zip did not
+include `.git` metadata.
+
+Optional Docker-backed migration smoke check
+Skipped in this environment because Docker is not installed.
+```
+
+Definition of done:
+
+* `ReviewDecision` ORM model exists.
+* `review_decisions` table metadata matches Project State fields.
+* `document_id` links review decisions to documents.
+* `reviewer_user_id` links review decisions to users.
+* Required review fields are non-null.
+* Official review decision values are defined.
+* `pending` is not an official review decision.
+* Review decision constraint exists.
+* Useful lookup indexes exist.
+* Multiple review decisions for the same document are still allowed.
+* Shared model metadata includes `review_decisions`.
+* Alembic target metadata includes `review_decisions`.
+* Migration `0007_create_review_decisions.py` exists.
+* Migration creates only `review_decisions` and supporting indexes.
+* Migration downgrade drops only `review_decisions` and supporting indexes.
+* No review service is added yet.
+* No review API route is added yet.
+* No document status transitions are added yet.
+* No audit logging is added yet.
+* No exports are added yet.
+* Tests cover model structure, official values, constraints, indexes,
+  metadata, and migration presence.
+* Existing tests were validated in smaller groups due to sandbox timeout.
+* Pytest groups pass.
+* CLI help works.
+* Alembic history works.
+* Project State is updated.
+* No generated private/local files are included.
+
+Suggested commit message:
+
+```text
+Add review decision model
 ```
 
 

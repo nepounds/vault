@@ -7,6 +7,7 @@ from vault.controls.models import ControlFlag
 from vault.database import Base
 from vault.documents.models import Document, DocumentFact
 from vault.organizations.models import Membership, Organization
+from vault.reviews.models import ReviewDecision
 
 __all__ = [
     "Base",
@@ -15,5 +16,6 @@ __all__ = [
     "DocumentFact",
     "Membership",
     "Organization",
+    "ReviewDecision",
     "User",
 ]

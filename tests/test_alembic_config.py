@@ -17,6 +17,7 @@ CREATE_ORGS_NAME = "0003_orgs_memberships.py"
 CREATE_DOCUMENTS_NAME = "0004_create_documents.py"
 CREATE_DOCUMENT_FACTS_NAME = "0005_create_document_facts.py"
 CREATE_CONTROL_FLAGS_NAME = "0006_create_control_flags.py"
+CREATE_REVIEW_DECISIONS_NAME = "0007_create_review_decisions.py"
 
 
 def test_alembic_ini_exists() -> None:
@@ -41,6 +42,7 @@ def test_expected_revision_files_exist() -> None:
         CREATE_DOCUMENTS_NAME,
         CREATE_DOCUMENT_FACTS_NAME,
         CREATE_CONTROL_FLAGS_NAME,
+        CREATE_REVIEW_DECISIONS_NAME,
     ]
 
 
@@ -295,6 +297,65 @@ def test_create_control_flags_revision_drops_only_flags_table() -> None:
     )
 
 
+def test_create_review_decisions_revision_metadata() -> None:
+    create_decisions = _load_module(VERSIONS_DIR / CREATE_REVIEW_DECISIONS_NAME)
+
+    assert create_decisions.revision == "0007_create_review_decisions"
+    assert create_decisions.down_revision == "0006_create_control_flags"
+
+
+def test_create_review_decisions_revision_creates_only_decisions_table() -> None:
+    tree = ast.parse(
+        (VERSIONS_DIR / CREATE_REVIEW_DECISIONS_NAME).read_text(
+            encoding="utf-8",
+        ),
+    )
+    upgrade_calls = _function_calls(tree, "upgrade")
+
+    create_table_calls = [
+        call
+        for call in upgrade_calls
+        if _call_name(call) == "op.create_table"
+    ]
+    created_tables = [_first_string_arg(call) for call in create_table_calls]
+
+    assert created_tables == ["review_decisions"]
+    assert _created_index_names(upgrade_calls) == [
+        "ix_review_decisions_document_id",
+        "ix_review_decisions_reviewer_user_id",
+        "ix_review_decisions_decision",
+        "ix_review_decisions_document_created_at",
+    ]
+    assert not any(_call_name(call) == "op.drop_table" for call in upgrade_calls)
+
+
+def test_create_review_decisions_revision_drops_only_decisions_table() -> None:
+    tree = ast.parse(
+        (VERSIONS_DIR / CREATE_REVIEW_DECISIONS_NAME).read_text(
+            encoding="utf-8",
+        ),
+    )
+    downgrade_calls = _function_calls(tree, "downgrade")
+
+    drop_table_calls = [
+        call
+        for call in downgrade_calls
+        if _call_name(call) == "op.drop_table"
+    ]
+    dropped_tables = [_first_string_arg(call) for call in drop_table_calls]
+
+    assert dropped_tables == ["review_decisions"]
+    assert _dropped_index_names(downgrade_calls) == [
+        "ix_review_decisions_document_created_at",
+        "ix_review_decisions_decision",
+        "ix_review_decisions_reviewer_user_id",
+        "ix_review_decisions_document_id",
+    ]
+    assert not any(
+        _call_name(call) == "op.create_table" for call in downgrade_calls
+    )
+
+
 def test_alembic_target_metadata_includes_current_tables(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -308,6 +369,7 @@ def test_alembic_target_metadata_includes_current_tables(
     assert "documents" in env.target_metadata.tables
     assert "document_facts" in env.target_metadata.tables
     assert "control_flags" in env.target_metadata.tables
+    assert "review_decisions" in env.target_metadata.tables
 
 
 def test_alembic_env_import_does_not_require_database_connection(
