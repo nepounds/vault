@@ -37,11 +37,11 @@ Project-control rule:
 
 ## Current status
 
-Current step: Step 26 — Control flags API routes.
+Current step: Step 27 — Duplicate detection service.
 
 Status: Complete with documented environment limitations.
 
-Approximate project completion: 84%.
+Approximate project completion: 86%.
 
 Current summary:
 
@@ -565,7 +565,39 @@ Current summary:
   no facts.
 * Control flag generation creates no flags for clean facts.
 * Control flag generation does not create duplicate-file-hash or
-  duplicate-invoice-attributes flags yet.
+  duplicate-invoice-attributes flags yet; duplicate-oriented generation is
+  handled by the separate Step 27 duplicate detection helper.
+* `find_duplicate_documents_by_hash()` finds same-organization documents with
+  the same SHA-256 hash and excludes the target document.
+* Duplicate file-hash lookup returns an empty list for missing target documents
+  and for no-match cases.
+* Duplicate file-hash lookup does not return documents from other organizations.
+* `find_duplicate_invoice_facts()` finds same-organization facts from other
+  documents with matching vendor name, invoice number, and amount cents.
+* Duplicate invoice lookup ignores missing or blank invoice numbers.
+* Duplicate invoice lookup compares vendor names case-insensitively.
+* Duplicate invoice lookup does not return facts from the same document.
+* Duplicate invoice lookup does not return facts from other organizations.
+* `generate_duplicate_control_flags_for_document()` creates duplicate-oriented
+  control flags for one requested document.
+* Duplicate file-hash generation creates a `duplicate_file_hash` flag with
+  blocker severity.
+* Duplicate invoice-attribute generation creates a
+  `duplicate_invoice_attributes` flag with warning severity.
+* Generated duplicate reasons mention the duplicate basis: file hash or
+  vendor/invoice/amount.
+* Generated duplicate reasons do not expose local absolute stored paths.
+* Duplicate control flag generation returns the created flags and flushes so IDs
+  are available.
+* Duplicate control flag generation does not commit automatically.
+* Duplicate control flag generation creates no flags when no duplicates exist.
+* Duplicate control flag generation does not inspect or flag cross-organization
+  duplicates.
+* Duplicate control flag generation does not update document status.
+* Duplicate duplicate-detection flags may still be generated if the helper is
+  called repeatedly; deduplication is deferred to a later step.
+* Duplicate detection service behavior does not verify organization membership;
+  future route dependencies will own organization access.
 * Control flag generation does not update document status.
 * Control flag generation does not verify organization membership; route
   dependencies will continue to own organization access in future API
@@ -620,68 +652,77 @@ Current summary:
 * Flags from other documents or organizations are not leaked through list or
   detail routes.
 * No membership management API routes, document download routes, duplicate
-  detection, reviews, audit logs, exports, refresh tokens, password reset,
+  detection API routes, reviews, audit logs, exports, refresh tokens, password reset,
   email verification, CI files, sample outputs, local databases beyond metadata
   migrations, or application container were added.
 
 Current validation status:
 
 ```text
-Step 26 validation was run in the uploaded runtime with partial tooling
+Step 27 validation was run in the uploaded runtime with partial tooling
 limitations.
 
-python -m pytest tests/test_control_flags_api.py -q
-Passed. 42 passed.
+python -m pytest tests/test_duplicate_detection_service.py -q
+Passed. 24 passed.
 
-python -m pytest tests/test_control_flags_api.py \
-  tests/test_control_flag_service.py tests/test_control_flag_model.py \
-  tests/test_document_facts_api.py -q
-Passed. 137 passed.
+python -m pytest tests/test_duplicate_detection_service.py \
+  tests/test_control_flag_service.py -q
+Passed. 65 passed.
 
 python -m pytest -q
 Attempted. The sandbox command timed out after mid-suite progress, not after a
 reported test failure. To compensate, the suite was run in smaller groups.
 
 python -m pytest tests/test_control_flags_api.py \
-  tests/test_control_flag_service.py tests/test_control_flag_model.py \
-  tests/test_alembic_config.py -q
-Passed. 121 passed.
+  tests/test_duplicate_detection_service.py -q
+Passed. 66 passed.
 
-python -m pytest tests/test_document_fact_service.py \
-  tests/test_document_fact_model.py tests/test_document_facts_api.py \
-  tests/test_document_model.py -q
-Passed. 105 passed.
+python -m pytest tests/test_control_flag_service.py \
+  tests/test_control_flag_model.py tests/test_document_fact_service.py -q
+Passed. 93 passed.
 
-python -m pytest tests/test_document_service.py tests/test_document_read_api.py \
-  tests/test_document_upload_api.py tests/test_document_storage.py -q
-Passed. 109 passed.
+python -m pytest tests/test_document_fact_model.py \
+  tests/test_document_facts_api.py tests/test_document_model.py -q
+Passed. 67 passed.
+
+python -m pytest tests/test_document_service.py \
+  tests/test_document_read_api.py -q
+Passed. 62 passed.
+
+python -m pytest tests/test_document_upload_api.py \
+  tests/test_document_storage.py -q
+Passed. 47 passed.
 
 python -m pytest tests/test_alembic_config.py tests/test_api_health.py \
-  tests/test_config.py tests/test_database_config.py tests/test_package_import.py -q
+  tests/test_config.py tests/test_database_config.py \
+  tests/test_package_import.py -q
 Passed. 38 passed.
 
-python -m pytest tests/test_auth_login_api.py tests/test_auth_login_service.py \
-  tests/test_auth_me_api.py tests/test_auth_registration_api.py \
-  tests/test_auth_tokens.py tests/test_current_user_dependency.py -q
+python -m pytest tests/test_auth_login_api.py \
+  tests/test_auth_login_service.py tests/test_auth_me_api.py \
+  tests/test_auth_registration_api.py tests/test_auth_tokens.py \
+  tests/test_current_user_dependency.py -q
 Passed. 51 passed.
 
 python -m pytest tests/test_organization_access_service.py \
   tests/test_organization_create_api.py tests/test_organization_models.py \
-  tests/test_organization_rbac_dependency.py tests/test_organization_service.py \
-  tests/test_passwords.py tests/test_upload_validation.py tests/test_user_model.py \
-  tests/test_user_service.py -q
-Passed. 125 passed.
+  tests/test_organization_rbac_dependency.py -q
+Passed. 70 passed.
 
-python -m py_compile src/vault/api/routes/documents.py \
-  src/vault/controls/schemas.py src/vault/exceptions.py \
-  tests/test_control_flags_api.py
+python -m pytest tests/test_organization_service.py tests/test_passwords.py \
+  tests/test_upload_validation.py tests/test_user_model.py \
+  tests/test_user_service.py -q
+Passed. 55 passed.
+
+python -m py_compile src/vault/controls/service.py \
+  tests/test_duplicate_detection_service.py
 Passed.
 
 python scripts/run_vault.py --help
 Passed. Help text displayed.
 
 python -m alembic history
-Passed. Alembic history shows 0006_create_control_flags as head. No Step 26
+Passed. Alembic history shows 0006_create_control_flags as head. No Step 27
 migration was added.
 
 python -m ruff check .
@@ -727,7 +768,7 @@ Validation rule:
 Next planned step:
 
 ```text
-Step 27 — Duplicate detection service.
+Step 28 — Duplicate detection API route.
 ```
 
 
@@ -6677,6 +6718,218 @@ Suggested commit message:
 ```text
 Add control flags API routes
 ```
+
+
+
+### Step 27 — Duplicate detection service
+
+Status: Complete with documented environment limitations.
+
+Goal:
+
+* Add directly testable duplicate detection service behavior that identifies
+  duplicate documents by SHA-256 file hash and duplicate invoice facts by
+  vendor, invoice number, and amount, then creates duplicate-oriented control
+  flags without adding API routes yet.
+
+Completed work:
+
+* Added typed `find_duplicate_documents_by_hash()` in
+  `src/vault/controls/service.py`.
+* The file-hash helper loads the target document and returns other documents in
+  the same organization with the same SHA-256 hash.
+* The file-hash helper excludes the target document itself.
+* The file-hash helper does not return documents from other organizations.
+* The file-hash helper returns an empty list when the target document is
+  missing or when no same-organization matches exist.
+* Added typed `find_duplicate_invoice_facts()` in
+  `src/vault/controls/service.py`.
+* The invoice duplicate helper inspects facts on the requested document.
+* The invoice duplicate helper compares against facts on other documents in the
+  same organization only.
+* Duplicate invoice matching uses same normalized vendor name, same non-blank
+  invoice number, and same amount cents.
+* Vendor matching is case-insensitive.
+* Invoice numbers are treated as exact after stored service trimming.
+* Facts with missing or blank invoice numbers are ignored.
+* Facts on the same document are excluded from duplicate invoice results.
+* Facts from other organizations are not leaked.
+* Added typed `generate_duplicate_control_flags_for_document()`.
+* Duplicate file-hash generation creates one `duplicate_file_hash` flag when
+  same-organization documents share the target document SHA-256 hash.
+* Duplicate file-hash flags use blocker severity.
+* Duplicate invoice-attribute generation creates one
+  `duplicate_invoice_attributes` flag when same-organization facts match by
+  vendor, invoice number, and amount cents.
+* Duplicate invoice-attribute flags use warning severity.
+* Generated duplicate reasons are human-readable and mention file hash or
+  vendor/invoice/amount as the duplicate basis.
+* Generated duplicate reasons do not expose local absolute stored paths.
+* Duplicate generation uses the existing `create_control_flag()` helper.
+* Duplicate generation returns created `ControlFlag` records and flushes so IDs
+  are available.
+* Duplicate generation does not commit automatically.
+* Duplicate generation creates no flags when no duplicates are found.
+* Duplicate generation does not inspect or flag cross-organization duplicates.
+* Duplicate generation does not update document status.
+* Duplicate duplicate-detection flags may still be generated if the helper is
+  called repeatedly; deduplication is deferred.
+* Organization membership verification remains outside this service and will be
+  enforced by future route dependencies.
+* No database migrations were added.
+* No duplicate detection API routes, review decisions, audit logging, exports,
+  sample outputs, CI files, local databases, or uploaded files were added.
+
+Files created or edited:
+
+```text
+src/vault/controls/service.py
+tests/test_duplicate_detection_service.py
+docs/Project_State.md
+```
+
+Commands run:
+
+```bash
+python -m pytest tests/test_duplicate_detection_service.py -q
+python -m pytest tests/test_duplicate_detection_service.py \
+  tests/test_control_flag_service.py -q
+python -m pytest -q
+python -m pytest tests/test_control_flags_api.py \
+  tests/test_duplicate_detection_service.py -q
+python -m pytest tests/test_control_flag_service.py \
+  tests/test_control_flag_model.py tests/test_document_fact_service.py -q
+python -m pytest tests/test_document_fact_model.py \
+  tests/test_document_facts_api.py tests/test_document_model.py -q
+python -m pytest tests/test_document_service.py \
+  tests/test_document_read_api.py -q
+python -m pytest tests/test_document_upload_api.py \
+  tests/test_document_storage.py -q
+python -m pytest tests/test_alembic_config.py tests/test_api_health.py \
+  tests/test_config.py tests/test_database_config.py \
+  tests/test_package_import.py -q
+python -m pytest tests/test_auth_login_api.py \
+  tests/test_auth_login_service.py tests/test_auth_me_api.py \
+  tests/test_auth_registration_api.py tests/test_auth_tokens.py \
+  tests/test_current_user_dependency.py -q
+python -m pytest tests/test_organization_access_service.py \
+  tests/test_organization_create_api.py tests/test_organization_models.py \
+  tests/test_organization_rbac_dependency.py -q
+python -m pytest tests/test_organization_service.py tests/test_passwords.py \
+  tests/test_upload_validation.py tests/test_user_model.py \
+  tests/test_user_service.py -q
+python -m py_compile src/vault/controls/service.py \
+  tests/test_duplicate_detection_service.py
+python scripts/run_vault.py --help
+python -m alembic history
+python -m ruff check .
+python -m mypy src scripts tests
+python -m bandit -r src
+python -m pip_audit
+git status --short
+```
+
+Validation results:
+
+```text
+python -m pytest tests/test_duplicate_detection_service.py -q
+Passed. 24 passed.
+
+python -m pytest tests/test_duplicate_detection_service.py \
+  tests/test_control_flag_service.py -q
+Passed. 65 passed.
+
+python -m pytest -q
+Attempted. The sandbox command timed out after mid-suite progress, not after a
+reported test failure. The suite was then run in smaller groups.
+
+Smaller pytest groups passed:
+
+* control flags API plus duplicate detection service: 66 passed
+* control flag service/model plus document fact service: 93 passed
+* document fact model/API plus document model: 67 passed
+* document service/read API: 62 passed
+* document upload API/storage: 47 passed
+* Alembic/API health/config/package smoke group: 38 passed
+* auth/current-user group: 51 passed
+* organization access/create/models/RBAC group: 70 passed
+* organization service/passwords/upload validation/user group: 55 passed
+
+python -m py_compile src/vault/controls/service.py \
+  tests/test_duplicate_detection_service.py
+Passed.
+
+python scripts/run_vault.py --help
+Passed. Help text displayed.
+
+python -m alembic history
+Passed. Alembic history shows 0006_create_control_flags as head. No Step 27
+migration was added.
+
+python -m ruff check .
+Could not run in this environment because Ruff is not installed in the active
+runtime.
+
+python -m mypy src scripts tests
+Could not run in this environment because mypy is not installed in the active
+runtime.
+
+python -m bandit -r src
+Could not run in this environment because Bandit is not installed in the active
+runtime.
+
+python -m pip_audit
+Could not run in this environment because pip-audit is not installed in the
+active runtime. No project vulnerability result was produced.
+
+git status --short
+Did not complete in this environment because the uploaded repo zip did not
+include `.git` metadata.
+
+Optional Docker-backed migration smoke check
+Skipped in this environment because Docker is not installed.
+```
+
+Definition of done:
+
+* Duplicate file-hash lookup helper exists.
+* Duplicate invoice-attribute lookup helper exists.
+* Duplicate detection is scoped to the target document's organization.
+* Duplicate detection excludes the target document where appropriate.
+* Duplicate detection does not leak cross-organization data.
+* Duplicate invoice detection uses vendor, invoice number, and amount.
+* Duplicate invoice detection ignores missing invoice numbers.
+* Duplicate control flag generation helper exists.
+* Duplicate generation creates duplicate-file-hash flags.
+* Duplicate generation creates duplicate-invoice-attributes flags.
+* Duplicate generated flags use official flag types.
+* Duplicate generated flags use official severities.
+* Duplicate generated reasons are clear and safe.
+* Duplicate generation returns created flags.
+* Duplicate generation flushes so IDs are available.
+* Duplicate generation does not commit automatically.
+* Duplicate generation creates no flags when no duplicates exist.
+* Duplicate generation does not update document status.
+* No duplicate detection API route is added yet.
+* No review workflow is added yet.
+* No audit logging is added yet.
+* No exports are added yet.
+* No migrations are added in this step.
+* Tests cover duplicate document lookup, duplicate fact lookup, organization
+  scoping, generated duplicate flags, clean/no-match behavior, and safe
+  reasons.
+* Existing tests were validated in smaller groups due to sandbox timeout.
+* CLI help works.
+* Alembic history works.
+* Project State is updated.
+* No generated private/local files are included.
+
+Suggested commit message:
+
+```text
+Add duplicate detection service
+```
+
 
 
 

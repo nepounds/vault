@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from vault.controls.models import ControlFlag
 from vault.controls.severities import SEVERITY_VALUES, ControlFlagSeverity
 from vault.controls.types import FLAG_TYPE_VALUES, ControlFlagType
-from vault.documents.models import DocumentFact
+from vault.documents.models import Document, DocumentFact
 from vault.exceptions import ControlFlagNotFoundError, ControlFlagValidationError
 
 HIGH_AMOUNT_THRESHOLD_CENTS = 100_000
@@ -45,6 +45,111 @@ def create_control_flag(
     session.flush()
 
     return flag
+
+
+def find_duplicate_documents_by_hash(
+    session: Session,
+    *,
+    document_id: UUID,
+) -> list[Document]:
+    """Find same-organization documents with the same SHA-256 hash."""
+    target_document = session.get(Document, document_id)
+    if target_document is None:
+        return []
+
+    statement = (
+        select(Document)
+        .where(
+            Document.organization_id == target_document.organization_id,
+            Document.sha256_hash == target_document.sha256_hash,
+            Document.id != target_document.id,
+        )
+        .order_by(Document.created_at.asc(), Document.id.asc())
+    )
+
+    return list(session.scalars(statement))
+
+
+def find_duplicate_invoice_facts(
+    session: Session,
+    *,
+    document_id: UUID,
+) -> list[DocumentFact]:
+    """Find same-organization invoice facts with matching key attributes."""
+    target_document = session.get(Document, document_id)
+    if target_document is None:
+        return []
+
+    target_facts = _list_duplicate_candidate_facts(
+        session,
+        document_id=document_id,
+    )
+    duplicate_facts_by_id: dict[UUID, DocumentFact] = {}
+
+    for fact in target_facts:
+        statement = (
+            select(DocumentFact)
+            .join(Document, Document.id == DocumentFact.document_id)
+            .where(
+                Document.organization_id == target_document.organization_id,
+                DocumentFact.document_id != document_id,
+                func.lower(DocumentFact.vendor_name) == fact.vendor_name.lower(),
+                DocumentFact.invoice_number == fact.invoice_number,
+                DocumentFact.amount_cents == fact.amount_cents,
+            )
+            .order_by(DocumentFact.created_at.asc(), DocumentFact.id.asc())
+        )
+        for duplicate_fact in session.scalars(statement):
+            duplicate_facts_by_id[duplicate_fact.id] = duplicate_fact
+
+    return sorted(
+        duplicate_facts_by_id.values(),
+        key=lambda fact: (fact.created_at, fact.id),
+    )
+
+
+def generate_duplicate_control_flags_for_document(
+    session: Session,
+    *,
+    document_id: UUID,
+) -> list[ControlFlag]:
+    """Generate duplicate-oriented control flags for one document."""
+    created_flags: list[ControlFlag] = []
+
+    duplicate_documents = find_duplicate_documents_by_hash(
+        session,
+        document_id=document_id,
+    )
+    if duplicate_documents:
+        created_flags.append(
+            create_control_flag(
+                session,
+                document_id=document_id,
+                flag_type=ControlFlagType.DUPLICATE_FILE_HASH.value,
+                severity=ControlFlagSeverity.BLOCKER.value,
+                reason=_duplicate_file_hash_reason(duplicate_documents),
+            )
+        )
+
+    duplicate_facts = find_duplicate_invoice_facts(
+        session,
+        document_id=document_id,
+    )
+    if duplicate_facts:
+        created_flags.append(
+            create_control_flag(
+                session,
+                document_id=document_id,
+                flag_type=ControlFlagType.DUPLICATE_INVOICE_ATTRIBUTES.value,
+                severity=ControlFlagSeverity.WARNING.value,
+                reason=_duplicate_invoice_attributes_reason(duplicate_facts),
+            )
+        )
+
+    if created_flags:
+        session.flush()
+
+    return created_flags
 
 
 def list_control_flags(
@@ -116,6 +221,41 @@ def generate_control_flags_for_document(
 
     return created_flags
 
+
+def _list_duplicate_candidate_facts(
+    session: Session,
+    *,
+    document_id: UUID,
+) -> list[DocumentFact]:
+    statement = (
+        select(DocumentFact)
+        .where(
+            DocumentFact.document_id == document_id,
+            DocumentFact.invoice_number.is_not(None),
+            func.length(func.trim(DocumentFact.invoice_number)) > 0,
+        )
+        .order_by(DocumentFact.created_at.asc(), DocumentFact.id.asc())
+    )
+
+    return list(session.scalars(statement))
+
+
+def _duplicate_file_hash_reason(duplicate_documents: list[Document]) -> str:
+    duplicate_count = len(duplicate_documents)
+    return (
+        "Duplicate file hash detected against "
+        f"{duplicate_count} other document(s) in this organization."
+    )
+
+
+def _duplicate_invoice_attributes_reason(
+    duplicate_facts: list[DocumentFact],
+) -> str:
+    duplicate_count = len(duplicate_facts)
+    return (
+        "Duplicate vendor/invoice/amount attributes detected against "
+        f"{duplicate_count} fact(s) on other document(s) in this organization."
+    )
 
 def _list_facts_for_generation(
     session: Session,
