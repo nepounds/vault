@@ -13,6 +13,9 @@ from sqlalchemy.pool import StaticPool
 
 from vault.api.dependencies import get_database_session
 from vault.api.main import create_app
+from vault.audit.actions import AuditAction
+from vault.audit.entities import AuditEntityType
+from vault.audit.models import AuditEntry
 from vault.auth.models import User
 from vault.auth.service import create_user
 from vault.auth.tokens import create_access_token
@@ -361,3 +364,38 @@ def test_openapi_schema_includes_organizations_path(
 
     assert response.status_code == 200
     assert "/organizations" in response.json()["paths"]
+
+
+def test_create_organization_creates_scoped_audit_entry(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    user = create_api_user(db_session)
+    token = create_access_token(user.id)
+
+    response = client.post(
+        "/organizations",
+        json=organization_payload(),
+        headers=auth_headers(token),
+    )
+
+    assert response.status_code == 201
+    organization_id = response.json()["id"]
+    audit_entry = db_session.scalar(select(AuditEntry))
+    assert audit_entry is not None
+    assert audit_entry.action == AuditAction.ORGANIZATION_CREATED.value
+    assert audit_entry.entity_type == AuditEntityType.ORGANIZATION.value
+    assert str(audit_entry.organization_id) == organization_id
+    assert str(audit_entry.entity_id) == organization_id
+    assert audit_entry.actor_user_id == user.id
+    assert audit_entry.metadata_json["name"] == "Example Company"
+
+
+def test_unauthorized_create_organization_does_not_create_audit_entry(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    response = client.post("/organizations", json=organization_payload())
+
+    assert response.status_code == 401
+    assert db_session.scalars(select(AuditEntry)).all() == []

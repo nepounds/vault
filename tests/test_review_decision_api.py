@@ -10,12 +10,14 @@ from typing import cast
 import pytest
 from fastapi.testclient import TestClient
 from httpx import Response
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from vault.api.dependencies import get_database_session
 from vault.api.main import create_app
+from vault.audit.actions import AuditAction
+from vault.audit.entities import AuditEntityType
 from vault.audit.models import AuditEntry
 from vault.auth.models import User
 from vault.auth.service import create_user
@@ -881,18 +883,98 @@ def test_review_responses_do_not_include_unsafe_fields(
     assert "generated-empty.pdf" not in response_text
 
 
-def test_review_routes_do_not_create_audit_entries_yet(
+def test_review_creation_creates_review_and_status_audit_entries(
     client: TestClient,
     db_session: Session,
     review_setup: dict[str, object],
 ) -> None:
-    submit_review(
+    organization_id = cast(uuid.UUID, review_setup["organization_id"])
+    document = cast(Document, review_setup["no_review_document"])
+    owner = cast(User, review_setup["owner"])
+
+    response = submit_review(
+        client,
+        organization_id=organization_id,
+        document_id=document.id,
+        user=owner,
+    )
+
+    assert response.status_code == 201
+    audit_entries = db_session.scalars(select(AuditEntry)).all()
+    actions = [entry.action for entry in audit_entries]
+    assert AuditAction.REVIEW_DECISION_CREATED.value in actions
+    assert AuditAction.DOCUMENT_STATUS_CHANGED.value in actions
+    review_entry = next(
+        entry
+        for entry in audit_entries
+        if entry.action == AuditAction.REVIEW_DECISION_CREATED.value
+    )
+    status_entry = next(
+        entry
+        for entry in audit_entries
+        if entry.action == AuditAction.DOCUMENT_STATUS_CHANGED.value
+    )
+    assert review_entry.entity_type == AuditEntityType.REVIEW_DECISION.value
+    assert str(review_entry.entity_id) == response.json()["id"]
+    assert review_entry.actor_user_id == owner.id
+    assert review_entry.metadata_json["document_id"] == str(document.id)
+    assert review_entry.metadata_json["decision"] == "approved"
+    assert review_entry.metadata_json["reason"] == "Looks good."
+    assert review_entry.metadata_json["resulting_document_status"] == "approved"
+    assert status_entry.entity_type == AuditEntityType.DOCUMENT.value
+    assert status_entry.entity_id == document.id
+    assert status_entry.metadata_json["old_status"] == DocumentStatus.PENDING.value
+    assert status_entry.metadata_json["new_status"] == DocumentStatus.APPROVED.value
+
+
+def test_review_creation_omits_status_audit_when_status_does_not_change(
+    client: TestClient,
+    db_session: Session,
+    review_setup: dict[str, object],
+) -> None:
+    organization_id = cast(uuid.UUID, review_setup["organization_id"])
+    document = cast(Document, review_setup["document"])
+    owner = cast(User, review_setup["owner"])
+
+    response = submit_review(
+        client,
+        organization_id=organization_id,
+        document_id=document.id,
+        user=owner,
+        decision=ReviewDecisionValueEnum.APPROVED.value,
+        reason="Still approved.",
+    )
+
+    assert response.status_code == 201
+    audit_entries = db_session.scalars(select(AuditEntry)).all()
+    new_entries = [
+        entry
+        for entry in audit_entries
+        if entry.summary.endswith(f"document {document.id}")
+    ]
+    actions = [entry.action for entry in new_entries]
+    assert actions == [AuditAction.REVIEW_DECISION_CREATED.value]
+
+
+def test_viewer_denied_review_creation_does_not_create_audit_entry(
+    client: TestClient,
+    db_session: Session,
+    review_setup: dict[str, object],
+) -> None:
+    response = submit_review(
         client,
         organization_id=cast(uuid.UUID, review_setup["organization_id"]),
         document_id=cast(Document, review_setup["no_review_document"]).id,
-        user=cast(User, review_setup["owner"]),
+        user=cast(User, review_setup["viewer"]),
     )
 
-    audit_count = db_session.scalar(select(func.count()).select_from(AuditEntry))
-
-    assert audit_count == 0
+    assert response.status_code == 403
+    new_entries = [
+        entry
+        for entry in db_session.scalars(select(AuditEntry)).all()
+        if entry.action in {
+            AuditAction.REVIEW_DECISION_CREATED.value,
+            AuditAction.DOCUMENT_STATUS_CHANGED.value,
+        }
+    ]
+    assert new_entries == []

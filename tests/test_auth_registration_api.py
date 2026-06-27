@@ -12,6 +12,9 @@ from sqlalchemy.pool import StaticPool
 
 from vault.api.dependencies import get_database_session
 from vault.api.main import create_app
+from vault.audit.actions import AuditAction
+from vault.audit.entities import AuditEntityType
+from vault.audit.models import AuditEntry
 from vault.auth.models import User
 from vault.auth.passwords import verify_password
 from vault.models import Base
@@ -181,3 +184,58 @@ def test_openapi_schema_includes_registration_path(client: TestClient) -> None:
 
     assert response.status_code == 200
     assert "/auth/register" in response.json()["paths"]
+
+
+def test_registration_creates_user_registered_audit_entry(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    response = client.post(
+        "/auth/register",
+        json=register_payload(password="very safe password"),
+    )
+
+    assert response.status_code == 201
+    audit_entry = db_session.scalar(select(AuditEntry))
+    assert audit_entry is not None
+    assert audit_entry.action == AuditAction.USER_REGISTERED.value
+    assert audit_entry.entity_type == AuditEntityType.USER.value
+    assert audit_entry.organization_id is None
+    assert audit_entry.entity_id == audit_entry.actor_user_id
+    assert audit_entry.metadata_json["email"] == "person@example.com"
+    assert audit_entry.metadata_json["actor_user_id_policy"] == "created_user"
+
+
+def test_registration_audit_entry_omits_password_data(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    raw_password = "very safe password"
+    response = client.post(
+        "/auth/register",
+        json=register_payload(password=raw_password),
+    )
+
+    assert response.status_code == 201
+    user = db_session.scalar(select(User).where(User.email == "person@example.com"))
+    audit_entry = db_session.scalar(select(AuditEntry))
+    assert user is not None
+    assert audit_entry is not None
+    metadata_text = str(audit_entry.metadata_json)
+    assert raw_password not in metadata_text
+    assert user.password_hash not in metadata_text
+    assert "password" not in metadata_text.lower()
+    assert "token" not in metadata_text.lower()
+
+
+def test_failed_registration_validation_does_not_create_audit_entry(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    response = client.post(
+        "/auth/register",
+        json=register_payload(email=" "),
+    )
+
+    assert response.status_code == 422
+    assert db_session.scalars(select(AuditEntry)).all() == []

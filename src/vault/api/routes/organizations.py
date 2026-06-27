@@ -15,6 +15,9 @@ from vault.api.dependencies import (
     get_database_session,
     require_organization_roles,
 )
+from vault.audit.actions import AuditAction
+from vault.audit.entities import AuditEntityType
+from vault.audit.service import create_audit_entry
 from vault.auth.models import User
 from vault.exceptions import OrganizationValidationError
 from vault.organizations.models import Membership, Organization
@@ -53,6 +56,21 @@ def create_organization_route(
             session,
             creator=current_user,
             name=organization_request.name,
+        )
+        create_audit_entry(
+            session,
+            organization_id=result.organization.id,
+            actor_user_id=current_user.id,
+            action=AuditAction.ORGANIZATION_CREATED.value,
+            entity_type=AuditEntityType.ORGANIZATION.value,
+            entity_id=result.organization.id,
+            summary=f"Organization created: {result.organization.name}",
+            metadata_json={
+                "organization_id": str(result.organization.id),
+                "name": result.organization.name,
+                "created_by_user_id": str(current_user.id),
+                "owner_membership_id": str(result.membership.id),
+            },
         )
         session.commit()
         session.refresh(result.organization)

@@ -37,11 +37,11 @@ Project-control rule:
 
 ## Current status
 
-Current step: Step 33 — Audit entry service.
+Current step: Step 34 — Wire audit entries into state-changing services.
 
 Status: Complete with documented environment limitations.
 
-Approximate project completion: 95%.
+Approximate project completion: 96%.
 
 Current summary:
 
@@ -750,7 +750,8 @@ Current summary:
 * Review decisions from another document are not returned by scoped lookup.
 * Review decision service behavior does not verify organization membership;
   future route dependencies will own organization access.
-* Review decision service behavior does not write audit entries yet.
+* Review decision service behavior itself does not write audit entries; Step 34
+  route wiring writes audit entries in the same session as the API workflow.
 * `src/vault/reviews/schemas.py` defines safe request and response schemas for
   review decision APIs.
 * Review decision creation requests include `decision` and `reason`.
@@ -796,7 +797,8 @@ Current summary:
 * Multiple review decisions for the same document remain allowed through the
   API.
 * Later review decisions can update the document status again through the API.
-* Review decision API routes do not write audit entries yet.
+* Review decision API routes write safe audit entries for review decisions and
+  actual document status changes.
 * `src/vault/audit/actions.py` defines official audit action values:
   `user_registered`, `organization_created`, `document_uploaded`,
   `document_fact_created`, `control_flags_generated`,
@@ -877,8 +879,9 @@ Current summary:
   dependencies will own organization access.
 * Audit service tests use safe metadata examples that avoid raw passwords,
   password hashes, bearer tokens, token payloads, and local absolute file paths.
-* No audit API route, export behavior, sample output, CI file, or state-changing
-  service audit wiring was added in Step 33.
+* Step 34 wires audit entry creation into the important state-changing API
+  workflows without adding audit API routes, exports, sample outputs, CI files,
+  migrations, or README final polish.
 * No membership management API routes, document download routes, audit logs,
   exports, refresh tokens, password reset, email
   verification, CI files, sample outputs, local databases beyond metadata
@@ -960,9 +963,232 @@ Validation rule:
 Next planned step:
 
 ```text
-Step 34 — Wire audit entries into state-changing services.
+Step 35 — Audit API route.
 ```
 
+
+
+### Step 34 — Wire audit entries into state-changing services
+
+Status: Complete with documented environment limitations.
+
+Goal:
+
+* Wire safe audit entry creation into important state-changing API workflows
+  using the existing Step 33 `create_audit_entry()` service, without adding
+  audit API routes, export routes, sample outputs, migrations, CI, or README
+  final polish.
+
+Completed work:
+
+* Wired `POST /auth/register` to create a `user_registered` audit entry.
+* Registration audit entries use entity type `user` and entity ID equal to the
+  created user ID.
+* Registration audit entries use the created user as actor; this is documented
+  in safe metadata with `actor_user_id_policy` set to `created_user`.
+* Registration audit metadata includes safe public user fields only and does
+  not include raw passwords, password hashes, bearer tokens, or token payloads.
+* Wired `POST /organizations` to create an `organization_created` audit entry.
+* Organization creation audit entries are scoped to the created organization.
+* Organization creation audit metadata includes safe organization ID, name,
+  creator user ID, and owner membership ID.
+* Wired `POST /organizations/{organization_id}/documents/upload` to create a
+  `document_uploaded` audit entry.
+* Document upload audit metadata includes document ID, original filename,
+  content type, file size, SHA-256 hash, and document status.
+* Document upload audit metadata does not include the local absolute stored
+  file path.
+* Wired `POST /organizations/{organization_id}/documents/{document_id}/facts`
+  to create a `document_fact_created` audit entry.
+* Document fact audit metadata includes document ID, vendor name, invoice
+  number, amount cents, currency, and category.
+* Wired control flag generation to create `control_flags_generated` audit
+  entries.
+* Control flag generation audit metadata includes document ID, generated flag
+  count, and generated flag IDs, types, and severities.
+* Control flag generation now writes an audit entry even when zero flags are
+  generated.
+* Wired duplicate flag generation to create `duplicate_flags_generated` audit
+  entries.
+* Duplicate flag generation audit metadata includes document ID, generated
+  duplicate flag count, and generated flag IDs, types, and severities.
+* Duplicate flag generation now writes an audit entry even when zero duplicate
+  flags are generated.
+* Wired review decision creation to create `review_decision_created` audit
+  entries.
+* Review decision audit metadata includes document ID, decision, reason, and
+  resulting document status.
+* Review decision creation now creates a `document_status_changed` audit entry
+  only when the document status actually changes.
+* Status-change audit metadata includes document ID, old status, and new
+  status.
+* Audit entries are added to the same SQLAlchemy session before the successful
+  route commit.
+* Failed validation attempts do not create audit entries in this step.
+* Unauthorized requests do not create audit entries.
+* Viewer-denied state changes do not create audit entries.
+* Audit entries use official Step 32 action values.
+* Audit entries use official Step 32 entity type values.
+* No new audit action values were added.
+* No new audit entity type values were added.
+* No database migrations were added.
+* No audit API routes, audit exports, approved-document exports, exception
+  exports, sample outputs, CI, or README final polish were added.
+
+Files created or edited:
+
+```text
+src/vault/api/routes/auth.py
+src/vault/api/routes/organizations.py
+src/vault/api/routes/documents.py
+tests/test_auth_registration_api.py
+tests/test_organization_create_api.py
+tests/test_document_upload_api.py
+tests/test_document_facts_api.py
+tests/test_control_flags_api.py
+tests/test_duplicate_detection_api.py
+tests/test_review_decision_api.py
+docs/Project_State.md
+```
+
+Commands run:
+
+```bash
+python -m pytest tests/test_auth_registration_api.py -q
+python -m pytest tests/test_organization_create_api.py -q
+python -m pytest tests/test_document_upload_api.py -q
+python -m pytest tests/test_document_facts_api.py -q
+python -m pytest tests/test_control_flags_api.py -q
+python -m pytest tests/test_duplicate_detection_api.py -q
+python -m pytest tests/test_review_decision_api.py -q
+python -m pytest tests/test_auth_registration_api.py tests/test_organization_create_api.py tests/test_document_upload_api.py -q
+python -m pytest tests/test_document_facts_api.py tests/test_control_flags_api.py -q
+python -m pytest tests/test_duplicate_detection_api.py tests/test_review_decision_api.py -q
+python -m pytest tests/test_alembic_config.py tests/test_api_health.py tests/test_audit_entry_model.py tests/test_audit_entry_service.py tests/test_auth_login_api.py tests/test_auth_login_service.py tests/test_auth_me_api.py tests/test_auth_registration_api.py -q
+python -m pytest tests/test_auth_tokens.py tests/test_config.py tests/test_control_flag_model.py tests/test_control_flag_service.py tests/test_current_user_dependency.py -q
+python -m pytest tests/test_database_config.py tests/test_document_fact_model.py tests/test_document_fact_service.py tests/test_document_facts_api.py -q
+python -m pytest tests/test_document_model.py tests/test_document_read_api.py tests/test_document_service.py tests/test_document_storage.py tests/test_document_upload_api.py -q
+python -m pytest tests/test_duplicate_detection_api.py tests/test_duplicate_detection_service.py tests/test_organization_access_service.py tests/test_organization_create_api.py -q
+python -m pytest tests/test_organization_models.py tests/test_organization_rbac_dependency.py tests/test_organization_service.py tests/test_package_import.py tests/test_passwords.py -q
+python -m pytest tests/test_review_decision_api.py tests/test_review_decision_model.py tests/test_review_decision_service.py tests/test_upload_validation.py tests/test_user_model.py tests/test_user_service.py -q
+python -m py_compile src/vault/api/routes/auth.py src/vault/api/routes/organizations.py src/vault/api/routes/documents.py tests/test_auth_registration_api.py tests/test_organization_create_api.py tests/test_document_upload_api.py tests/test_document_facts_api.py tests/test_control_flags_api.py tests/test_duplicate_detection_api.py tests/test_review_decision_api.py
+python scripts/run_vault.py --help
+python -m alembic history
+python -m ruff check .
+python -m mypy src scripts tests
+python -m bandit -r src
+python -m pip_audit
+docker --version
+git status --short
+```
+
+Validation results:
+
+```text
+python -m pytest tests/test_auth_registration_api.py -q
+Passed. 14 passed.
+
+python -m pytest tests/test_organization_create_api.py -q
+Passed. 19 passed.
+
+python -m pytest tests/test_document_upload_api.py -q
+Passed. 25 passed.
+
+python -m pytest tests/test_document_facts_api.py -q
+Passed. 43 passed.
+
+python -m pytest tests/test_control_flags_api.py -q
+Passed. 45 passed.
+
+python -m pytest tests/test_duplicate_detection_api.py -q
+Passed. 35 passed.
+
+python -m pytest tests/test_review_decision_api.py -q
+Passed. 47 passed.
+
+Focused pytest groups
+Passed. The full available test suite was covered in smaller groups. Grouped
+runs passed with counts including 58, 88, 82, 139, 72, 98, 125, 94, 57, and
+130 passed.
+
+python -m py_compile ...
+Passed.
+
+Python line-length check for Step 34 edited Python files
+Passed. No lines over 88 characters were found after wrapping two long lines.
+
+python scripts/run_vault.py --help
+Passed. Help text displayed.
+
+python -m alembic history
+Passed. Alembic history shows 0008_create_audit_entries as head.
+
+python -m ruff check .
+Could not run in this environment because Ruff is not installed in the active
+runtime.
+
+python -m mypy src scripts tests
+Could not run in this environment because mypy is not installed in the active
+runtime.
+
+python -m bandit -r src
+Could not run in this environment because Bandit is not installed in the active
+runtime.
+
+python -m pip_audit
+Could not run in this environment because pip-audit is not installed in the
+active runtime. No project vulnerability result was produced.
+
+git status --short
+Did not complete in this environment because the uploaded repo zip did not
+include `.git` metadata.
+
+Optional Docker-backed migration smoke check
+Skipped in this environment because Docker is not installed.
+```
+
+Definition of done:
+
+* Registration creates a safe `user_registered` audit entry.
+* Organization creation creates a safe `organization_created` audit entry.
+* Document upload creates a safe `document_uploaded` audit entry.
+* Document fact creation creates a safe `document_fact_created` audit entry.
+* Control flag generation creates a safe `control_flags_generated` audit entry.
+* Duplicate flag generation creates a safe `duplicate_flags_generated` audit
+  entry.
+* Review decision creation creates a safe `review_decision_created` audit entry.
+* Review decision creation creates a safe `document_status_changed` audit entry
+  when the document status actually changes.
+* No status-change audit entry is created when the review keeps the same
+  status.
+* Audit entries are written in the same session as the successful state change.
+* Failed validation requests do not create audit entries in this step.
+* Unauthorized requests do not create audit entries.
+* Viewer-denied state changes do not create audit entries.
+* Audit entries use official action values.
+* Audit entries use official entity type values.
+* Audit entries are scoped to the correct organization where applicable.
+* Audit metadata remains structured and safe.
+* Audit metadata does not include raw passwords.
+* Audit metadata does not include password hashes.
+* Audit metadata does not include bearer tokens.
+* Audit metadata does not include token payloads.
+* Audit metadata does not include local absolute stored paths.
+* No audit API route is added yet.
+* No exports are added yet.
+* No migrations are added in this step.
+* Tests cover audit wiring for each important state-changing route.
+* Existing tests were validated in smaller groups due to sandbox timeout risk.
+* CLI help works.
+* Alembic history works.
+* Project State is updated.
+* No generated private/local files are included.
+
+Suggested commit message:
+
+```text
+Wire audit entries into workflows
+```
 
 
 ### Step 33 — Audit entry service

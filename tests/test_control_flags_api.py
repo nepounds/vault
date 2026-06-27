@@ -16,6 +16,9 @@ from sqlalchemy.pool import StaticPool
 
 from vault.api.dependencies import get_database_session
 from vault.api.main import create_app
+from vault.audit.actions import AuditAction
+from vault.audit.entities import AuditEntityType
+from vault.audit.models import AuditEntry
 from vault.auth.models import User
 from vault.auth.service import create_user
 from vault.auth.tokens import create_access_token
@@ -968,3 +971,53 @@ def test_control_flag_responses_do_not_include_password_hashes(
 
     assert "password_hash" not in response.text
     assert "$argon2" not in response.text
+
+
+def test_control_flag_generation_creates_audit_entry(
+    client: TestClient,
+    flag_setup: dict[str, object],
+    db_session: Session,
+) -> None:
+    owner = flag_setup["owner"]
+    assert isinstance(owner, User)
+
+    response = generate_as(client, flag_setup, "owner")
+
+    assert response.status_code == 200
+    generated_flags = response.json()
+    audit_entry = db_session.scalars(select(AuditEntry)).all()[-1]
+    assert audit_entry.action == AuditAction.CONTROL_FLAGS_GENERATED.value
+    assert audit_entry.entity_type == AuditEntityType.DOCUMENT.value
+    assert str(audit_entry.entity_id) == str(document_id_from(flag_setup))
+    assert str(audit_entry.organization_id) == str(organization_id_from(flag_setup))
+    assert audit_entry.actor_user_id == owner.id
+    generated_flag_metadata = audit_entry.metadata_json["generated_flags"]
+    assert isinstance(generated_flag_metadata, list)
+    assert audit_entry.metadata_json["generated_flag_count"] == len(generated_flags)
+    assert len(generated_flag_metadata) == len(generated_flags)
+
+
+def test_control_flag_generation_zero_flags_still_creates_audit_entry(
+    client: TestClient,
+    flag_setup: dict[str, object],
+    db_session: Session,
+) -> None:
+    response = generate_as(client, flag_setup, "owner", "clean_document")
+
+    assert response.status_code == 200
+    assert response.json() == []
+    audit_entry = db_session.scalars(select(AuditEntry)).all()[-1]
+    assert audit_entry.action == AuditAction.CONTROL_FLAGS_GENERATED.value
+    assert audit_entry.metadata_json["generated_flag_count"] == 0
+    assert audit_entry.metadata_json["generated_flags"] == []
+
+
+def test_viewer_denied_control_generation_does_not_create_audit_entry(
+    client: TestClient,
+    flag_setup: dict[str, object],
+    db_session: Session,
+) -> None:
+    response = generate_as(client, flag_setup, "viewer")
+
+    assert response.status_code == 403
+    assert db_session.scalars(select(AuditEntry)).all() == []

@@ -9,6 +9,9 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
+from vault.audit.actions import AuditAction
+from vault.audit.entities import AuditEntityType
+from vault.audit.service import AuditMetadataValue, create_audit_entry
 from vault.api.dependencies import (
     get_current_user,
     get_database_session,
@@ -16,6 +19,7 @@ from vault.api.dependencies import (
 )
 from vault.auth.models import User
 from vault.config import load_settings
+from vault.controls.models import ControlFlag
 from vault.controls.schemas import ControlFlagResponse
 from vault.controls.service import (
     generate_control_flags_for_document,
@@ -139,6 +143,7 @@ def create_document_fact_route(
     organization_id: UUID,
     document_id: UUID,
     request: DocumentFactCreateRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[Session, Depends(get_database_session)],
     _membership: UploadMembership,
 ) -> DocumentFactResponse:
@@ -160,6 +165,23 @@ def create_document_fact_route(
             currency=request.currency,
             category=request.category,
             memo=request.memo,
+        )
+        create_audit_entry(
+            session,
+            organization_id=organization_id,
+            actor_user_id=current_user.id,
+            action=AuditAction.DOCUMENT_FACT_CREATED.value,
+            entity_type=AuditEntityType.DOCUMENT_FACT.value,
+            entity_id=fact.id,
+            summary=f"Document fact created for document {document.id}",
+            metadata_json={
+                "document_id": str(document.id),
+                "vendor_name": fact.vendor_name,
+                "invoice_number": fact.invoice_number,
+                "amount_cents": fact.amount_cents,
+                "currency": fact.currency,
+                "category": fact.category,
+            },
         )
         session.commit()
         session.refresh(fact)
@@ -251,6 +273,7 @@ def read_document_fact_detail(
 def generate_duplicate_control_flags_route(
     organization_id: UUID,
     document_id: UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[Session, Depends(get_database_session)],
     _membership: UploadMembership,
 ) -> list[ControlFlagResponse]:
@@ -264,6 +287,20 @@ def generate_duplicate_control_flags_route(
         flags = generate_duplicate_control_flags_for_document(
             session,
             document_id=document.id,
+        )
+        create_audit_entry(
+            session,
+            organization_id=organization_id,
+            actor_user_id=current_user.id,
+            action=AuditAction.DUPLICATE_FLAGS_GENERATED.value,
+            entity_type=AuditEntityType.DOCUMENT.value,
+            entity_id=document.id,
+            summary=f"Duplicate flags generated for document {document.id}",
+            metadata_json={
+                "document_id": str(document.id),
+                "generated_flag_count": len(flags),
+                "generated_flags": _flag_metadata(flags),
+            },
         )
         session.commit()
         for flag in flags:
@@ -285,6 +322,7 @@ def generate_duplicate_control_flags_route(
 def generate_control_flags_route(
     organization_id: UUID,
     document_id: UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[Session, Depends(get_database_session)],
     _membership: UploadMembership,
 ) -> list[ControlFlagResponse]:
@@ -298,6 +336,20 @@ def generate_control_flags_route(
         flags = generate_control_flags_for_document(
             session,
             document_id=document.id,
+        )
+        create_audit_entry(
+            session,
+            organization_id=organization_id,
+            actor_user_id=current_user.id,
+            action=AuditAction.CONTROL_FLAGS_GENERATED.value,
+            entity_type=AuditEntityType.DOCUMENT.value,
+            entity_id=document.id,
+            summary=f"Control flags generated for document {document.id}",
+            metadata_json={
+                "document_id": str(document.id),
+                "generated_flag_count": len(flags),
+                "generated_flags": _flag_metadata(flags),
+            },
         )
         session.commit()
         for flag in flags:
@@ -397,6 +449,7 @@ def create_review_decision_route(
             organization_id=organization_id,
             document_id=document_id,
         )
+        old_status = document.status
         review_decision = create_review_decision(
             session,
             document_id=document.id,
@@ -404,6 +457,39 @@ def create_review_decision_route(
             decision=request.decision,
             reason=request.reason,
         )
+        create_audit_entry(
+            session,
+            organization_id=organization_id,
+            actor_user_id=current_user.id,
+            action=AuditAction.REVIEW_DECISION_CREATED.value,
+            entity_type=AuditEntityType.REVIEW_DECISION.value,
+            entity_id=review_decision.id,
+            summary=f"Review decision created for document {document.id}",
+            metadata_json={
+                "document_id": str(document.id),
+                "decision": review_decision.decision,
+                "reason": review_decision.reason,
+                "resulting_document_status": document.status,
+            },
+        )
+        if old_status != document.status:
+            create_audit_entry(
+                session,
+                organization_id=organization_id,
+                actor_user_id=current_user.id,
+                action=AuditAction.DOCUMENT_STATUS_CHANGED.value,
+                entity_type=AuditEntityType.DOCUMENT.value,
+                entity_id=document.id,
+                summary=(
+                    f"Document status changed from {old_status} "
+                    f"to {document.status}"
+                ),
+                metadata_json={
+                    "document_id": str(document.id),
+                    "old_status": old_status,
+                    "new_status": document.status,
+                },
+            )
         session.commit()
         session.refresh(review_decision)
         session.refresh(document)
@@ -534,6 +620,23 @@ async def upload_document(
             file_size_bytes=stored_upload.file_size_bytes,
             sha256_hash=stored_upload.sha256_hash,
         )
+        create_audit_entry(
+            session,
+            organization_id=organization_id,
+            actor_user_id=current_user.id,
+            action=AuditAction.DOCUMENT_UPLOADED.value,
+            entity_type=AuditEntityType.DOCUMENT.value,
+            entity_id=document.id,
+            summary=f"Document uploaded: {document.original_filename}",
+            metadata_json={
+                "document_id": str(document.id),
+                "original_filename": document.original_filename,
+                "content_type": document.content_type,
+                "file_size_bytes": document.file_size_bytes,
+                "sha256_hash": document.sha256_hash,
+                "status": document.status,
+            },
+        )
         session.commit()
         session.refresh(document)
     except (DocumentUploadValidationError, DocumentValidationError) as exc:
@@ -544,6 +647,17 @@ async def upload_document(
         ) from exc
 
     return DocumentUploadResponse.model_validate(document)
+
+
+def _flag_metadata(flags: list[ControlFlag]) -> list[AuditMetadataValue]:
+    return [
+        {
+            "flag_id": str(flag.id),
+            "flag_type": flag.flag_type,
+            "severity": flag.severity,
+        }
+        for flag in flags
+    ]
 
 
 def _known_upload_size(file: UploadFile) -> int | None:

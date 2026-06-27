@@ -10,12 +10,15 @@ from typing import cast
 import pytest
 from fastapi.testclient import TestClient
 from httpx import Response
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from vault.api.dependencies import get_database_session
 from vault.api.main import create_app
+from vault.audit.actions import AuditAction
+from vault.audit.entities import AuditEntityType
+from vault.audit.models import AuditEntry
 from vault.auth.models import User
 from vault.auth.service import create_user
 from vault.auth.tokens import create_access_token
@@ -783,3 +786,55 @@ def test_missing_document_in_accessible_org_returns_safe_not_found(
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Document was not found."
+
+
+def test_fact_creation_creates_document_fact_audit_entry(
+    client: TestClient,
+    fact_setup: dict[str, object],
+    db_session: Session,
+) -> None:
+    owner = fact_setup["owner"]
+    assert isinstance(owner, User)
+
+    response = create_as(client, fact_setup, "owner")
+
+    assert response.status_code == 201
+    audit_entries = db_session.scalars(select(AuditEntry)).all()
+    audit_entry = audit_entries[-1]
+    assert audit_entry.action == AuditAction.DOCUMENT_FACT_CREATED.value
+    assert audit_entry.entity_type == AuditEntityType.DOCUMENT_FACT.value
+    assert str(audit_entry.entity_id) == response.json()["id"]
+    assert str(audit_entry.organization_id) == str(organization_id_from(fact_setup))
+    assert audit_entry.actor_user_id == owner.id
+    assert audit_entry.metadata_json["vendor_name"] == "Example Vendor LLC"
+    assert audit_entry.metadata_json["invoice_number"] == "INV-100"
+    assert audit_entry.metadata_json["amount_cents"] == 12345
+    assert audit_entry.metadata_json["currency"] == "USD"
+    assert audit_entry.metadata_json["category"] == "Office Supplies"
+
+
+def test_fact_creation_validation_failure_does_not_create_audit_entry(
+    client: TestClient,
+    fact_setup: dict[str, object],
+    db_session: Session,
+) -> None:
+    response = create_as(
+        client,
+        fact_setup,
+        "owner",
+        payload={**valid_fact_payload(), "amount_cents": 0},
+    )
+
+    assert response.status_code == 400
+    assert db_session.scalars(select(AuditEntry)).all() == []
+
+
+def test_viewer_denied_fact_creation_does_not_create_audit_entry(
+    client: TestClient,
+    fact_setup: dict[str, object],
+    db_session: Session,
+) -> None:
+    response = create_as(client, fact_setup, "viewer")
+
+    assert response.status_code == 403
+    assert db_session.scalars(select(AuditEntry)).all() == []

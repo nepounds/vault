@@ -18,6 +18,9 @@ from sqlalchemy.pool import StaticPool
 
 from vault.api.dependencies import get_database_session
 from vault.api.main import create_app
+from vault.audit.actions import AuditAction
+from vault.audit.entities import AuditEntityType
+from vault.audit.models import AuditEntry
 from vault.auth.models import User
 from vault.auth.service import create_user
 from vault.auth.tokens import create_access_token
@@ -522,3 +525,59 @@ def test_upload_route_appears_in_openapi(client: TestClient) -> None:
     assert "/organizations/{organization_id}/documents/upload" in response.json()[
         "paths"
     ]
+
+
+def test_upload_creates_safe_document_uploaded_audit_entry(
+    client: TestClient,
+    upload_setup: dict[str, object],
+    db_session: Session,
+    upload_dir: Path,
+) -> None:
+    owner = upload_setup["owner"]
+    assert isinstance(owner, User)
+
+    response = upload_as(client, upload_setup, "owner")
+
+    assert response.status_code == 201
+    document_id = response.json()["id"]
+    audit_entry = db_session.scalar(select(AuditEntry))
+    assert audit_entry is not None
+    assert audit_entry.action == AuditAction.DOCUMENT_UPLOADED.value
+    assert audit_entry.entity_type == AuditEntityType.DOCUMENT.value
+    assert str(audit_entry.organization_id) == str(organization_id_from(upload_setup))
+    assert str(audit_entry.entity_id) == document_id
+    assert audit_entry.actor_user_id == owner.id
+    assert audit_entry.metadata_json["original_filename"] == "invoice.csv"
+    assert audit_entry.metadata_json["content_type"] == "text/csv"
+    assert audit_entry.metadata_json["file_size_bytes"] == len(VALID_CSV_BYTES)
+    assert audit_entry.metadata_json["status"] == DocumentStatus.PENDING.value
+    metadata_text = str(audit_entry.metadata_json)
+    assert str(upload_dir) not in metadata_text
+    assert "stored_path" not in metadata_text
+
+
+def test_viewer_denied_upload_does_not_create_audit_entry(
+    client: TestClient,
+    upload_setup: dict[str, object],
+    db_session: Session,
+) -> None:
+    response = upload_as(client, upload_setup, "viewer")
+
+    assert response.status_code == 403
+    assert db_session.scalars(select(AuditEntry)).all() == []
+
+
+def test_failed_upload_validation_does_not_create_audit_entry(
+    client: TestClient,
+    upload_setup: dict[str, object],
+    db_session: Session,
+) -> None:
+    response = upload_as(
+        client,
+        upload_setup,
+        "owner",
+        files=csv_upload(filename="bad.exe", content_type="text/csv"),
+    )
+
+    assert response.status_code == 400
+    assert db_session.scalars(select(AuditEntry)).all() == []

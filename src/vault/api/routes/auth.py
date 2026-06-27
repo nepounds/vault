@@ -8,6 +8,9 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from vault.api.dependencies import get_current_user, get_database_session
+from vault.audit.actions import AuditAction
+from vault.audit.entities import AuditEntityType
+from vault.audit.service import create_audit_entry
 from vault.auth.models import User
 from vault.auth.schemas import (
     CurrentUserResponse,
@@ -44,6 +47,21 @@ def register_user(
             email=registration.email,
             raw_password=registration.password,
             full_name=registration.full_name,
+        )
+        create_audit_entry(
+            session,
+            organization_id=None,
+            actor_user_id=user.id,
+            action=AuditAction.USER_REGISTERED.value,
+            entity_type=AuditEntityType.USER.value,
+            entity_id=user.id,
+            summary=f"User registered: {user.email}",
+            metadata_json={
+                "user_id": str(user.id),
+                "email": user.email,
+                "full_name": user.full_name,
+                "actor_user_id_policy": "created_user",
+            },
         )
         session.commit()
         session.refresh(user)
