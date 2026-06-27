@@ -16,15 +16,25 @@ from vault.api.dependencies import (
 )
 from vault.auth.models import User
 from vault.config import load_settings
-from vault.documents.schemas import DocumentResponse, DocumentUploadResponse
+from vault.documents.schemas import (
+    DocumentFactCreateRequest,
+    DocumentFactResponse,
+    DocumentResponse,
+    DocumentUploadResponse,
+)
 from vault.documents.service import (
+    create_document_fact,
     create_document_metadata,
+    list_document_facts,
     list_documents_for_organization,
+    require_document_fact,
     require_document_for_organization,
 )
 from vault.documents.storage import store_upload_bytes
 from vault.documents.validation import validate_upload_metadata
 from vault.exceptions import (
+    DocumentFactNotFoundError,
+    DocumentFactValidationError,
     DocumentNotFoundError,
     DocumentUploadValidationError,
     DocumentValidationError,
@@ -99,6 +109,120 @@ def read_document_detail(
         ) from exc
 
     return DocumentResponse.model_validate(document)
+
+
+@router.post(
+    "/{organization_id}/documents/{document_id}/facts",
+    response_model=DocumentFactResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_document_fact_route(
+    organization_id: UUID,
+    document_id: UUID,
+    request: DocumentFactCreateRequest,
+    session: Annotated[Session, Depends(get_database_session)],
+    _membership: UploadMembership,
+) -> DocumentFactResponse:
+    """Create one structured fact for an organization-scoped document."""
+    try:
+        document = require_document_for_organization(
+            session,
+            organization_id=organization_id,
+            document_id=document_id,
+        )
+        fact = create_document_fact(
+            session,
+            document_id=document.id,
+            vendor_name=request.vendor_name,
+            invoice_number=request.invoice_number,
+            invoice_date=request.invoice_date,
+            due_date=request.due_date,
+            amount_cents=request.amount_cents,
+            currency=request.currency,
+            category=request.category,
+            memo=request.memo,
+        )
+        session.commit()
+        session.refresh(fact)
+    except DocumentNotFoundError as exc:
+        session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document was not found.",
+        ) from exc
+    except DocumentFactValidationError as exc:
+        session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    return DocumentFactResponse.model_validate(fact)
+
+
+@router.get(
+    "/{organization_id}/documents/{document_id}/facts",
+    response_model=list[DocumentFactResponse],
+)
+def list_document_facts_route(
+    organization_id: UUID,
+    document_id: UUID,
+    session: Annotated[Session, Depends(get_database_session)],
+    _membership: ReadMembership,
+) -> list[DocumentFactResponse]:
+    """List safe fact metadata for an organization-scoped document."""
+    try:
+        document = require_document_for_organization(
+            session,
+            organization_id=organization_id,
+            document_id=document_id,
+        )
+    except DocumentNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document was not found.",
+        ) from exc
+
+    facts = list_document_facts(session, document_id=document.id)
+
+    return [DocumentFactResponse.model_validate(fact) for fact in facts]
+
+
+@router.get(
+    "/{organization_id}/documents/{document_id}/facts/{fact_id}",
+    response_model=DocumentFactResponse,
+)
+def read_document_fact_detail(
+    organization_id: UUID,
+    document_id: UUID,
+    fact_id: UUID,
+    session: Annotated[Session, Depends(get_database_session)],
+    _membership: ReadMembership,
+) -> DocumentFactResponse:
+    """Return safe metadata for one organization-scoped document fact."""
+    try:
+        document = require_document_for_organization(
+            session,
+            organization_id=organization_id,
+            document_id=document_id,
+        )
+        fact = require_document_fact(
+            session,
+            document_id=document.id,
+            fact_id=fact_id,
+        )
+    except DocumentNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document was not found.",
+        ) from exc
+    except DocumentFactNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document fact was not found.",
+        ) from exc
+
+    return DocumentFactResponse.model_validate(fact)
 
 
 @router.post(

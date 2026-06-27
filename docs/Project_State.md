@@ -37,11 +37,11 @@ Project-control rule:
 
 ## Current status
 
-Current step: Step 22 — Document facts service.
+Current step: Step 23 — Document facts API route.
 
 Status: Complete with documented environment limitations.
 
-Approximate project completion: 75%.
+Approximate project completion: 77%.
 
 Current summary:
 
@@ -420,6 +420,44 @@ Current summary:
   and its supporting indexes.
 * The create-document-facts migration downgrade drops only the
   `document_facts` table after dropping its supporting indexes.
+* `src/vault/documents/schemas.py` defines safe request and response schemas for
+  document fact creation and fact metadata responses.
+* `src/vault/api/routes/documents.py` provides organization-scoped document fact
+  create, list, and detail API routes.
+* `POST /organizations/{organization_id}/documents/{document_id}/facts` exists
+  and returns HTTP 201 on successful fact creation.
+* `GET /organizations/{organization_id}/documents/{document_id}/facts` exists
+  and returns safe fact metadata for one organization-scoped document.
+* `GET /organizations/{organization_id}/documents/{document_id}/facts/{fact_id}`
+  exists and returns safe metadata for one organization-scoped document fact.
+* Document fact API routes require a valid bearer token for an active user.
+* Document fact API routes require organization membership through the reusable
+  organization RBAC dependency.
+* Document fact creation explicitly allows owners and reviewers.
+* Document fact creation rejects viewers, non-members, and unknown organizations.
+* Document fact list and detail routes explicitly allow owners, reviewers, and
+  viewers.
+* Document fact list and detail routes reject non-members and unknown
+  organizations with the existing safe HTTP 403 organization-access behavior.
+* Missing, invalid, expired, unknown-user, and inactive-user bearer tokens
+  continue to return HTTP 401 before fact route behavior runs.
+* Fact routes verify the path document belongs to the path organization before
+  creating, listing, or reading facts.
+* Documents from another organization are not accepted through fact routes, even
+  when the document ID exists.
+* Missing documents in an accessible organization return HTTP 404 with a safe
+  public message.
+* Fact creation calls the Step 22 `create_document_fact()` service.
+* Fact listing calls the Step 22 `list_document_facts()` service.
+* Fact detail calls the Step 22 `require_document_fact()` service.
+* Successful fact creation commits and refreshes the created fact before
+  returning.
+* Fact validation errors return HTTP 400 with safe public messages.
+* Missing fact detail returns HTTP 404 with a safe public message.
+* Fact responses include safe fact metadata only and do not include local
+  absolute file paths, raw passwords, password hashes, or token internals.
+* Duplicate document facts are still allowed because duplicate detection has not
+  been implemented yet.
 * `src/vault/documents/service.py` provides typed document facts service
   behavior.
 * `create_document_fact()` creates one structured `DocumentFact` record for a
@@ -456,20 +494,19 @@ Current summary:
 * If storage succeeds but the database commit later fails, Step 19 does not yet
   delete the stored file as rollback cleanup; that cleanup is deferred rather
   than making this route step larger.
-* No membership management API routes, document download routes, document facts
-  API routes, control flags, duplicate detection, reviews, audit logs,
-  exports, refresh tokens, password reset, email verification, CI files,
-  sample outputs, local databases beyond metadata migrations, or
-  application container were added.
+* No membership management API routes, document download routes, control flags,
+  duplicate detection, reviews, audit logs, exports, refresh tokens, password
+  reset, email verification, CI files, sample outputs, local databases beyond
+  metadata migrations, or application container were added.
 
 Current validation status:
 
 ```text
-Step 22 validation was run in the uploaded runtime with partial tooling
+Step 23 validation was run in the uploaded runtime with partial tooling
 limitations.
 
-python -m pytest tests/test_document_fact_service.py -q
-Passed. 38 passed.
+python -m pytest tests/test_document_facts_api.py -q
+Passed. 40 passed.
 
 python -m pytest -q
 Attempted. The sandbox command timed out after mid-suite progress, not after a
@@ -504,7 +541,9 @@ python -m pytest tests/test_organization_access_service.py \
   tests/test_user_service.py -q
 Passed. 125 passed.
 
-python -m py_compile src/vault/documents/service.py src/vault/exceptions.py \
+python -m py_compile src/vault/api/routes/documents.py \
+  src/vault/documents/schemas.py src/vault/documents/service.py \
+  src/vault/exceptions.py tests/test_document_facts_api.py \
   tests/test_document_fact_service.py
 Passed.
 
@@ -514,7 +553,7 @@ Passed. Help text displayed.
 python -m alembic history
 Passed. Alembic history shows 0001_baseline, 0002_create_users,
 0003_orgs_memberships, 0004_create_documents, and
-0005_create_document_facts as head. No Step 22 migration was added.
+0005_create_document_facts as head. No Step 23 migration was added.
 
 python -m ruff check .
 Could not run in this environment because Ruff is not installed in the active
@@ -558,7 +597,7 @@ Validation rule:
 Next planned step:
 
 ```text
-Step 23 — Document facts API route.
+Step 24 — Control flags model and migration.
 ```
 
 
@@ -5601,6 +5640,229 @@ Suggested commit message:
 
 ```text
 Add document facts service
+```
+
+
+### Step 23 — Document facts API route
+
+Status: Complete with documented environment limitations.
+
+Goal:
+
+* Add authenticated, organization-scoped document facts API routes that allow
+  owners and reviewers to create facts for an existing organization-scoped
+  document, and allow owners, reviewers, and viewers to list/read safe fact
+  metadata.
+
+Completed work:
+
+* Added `DocumentFactCreateRequest` in `src/vault/documents/schemas.py`.
+* Added `DocumentFactResponse` in `src/vault/documents/schemas.py`.
+* Added `POST /organizations/{organization_id}/documents/{document_id}/facts`.
+* Added `GET /organizations/{organization_id}/documents/{document_id}/facts`.
+* Added
+  `GET /organizations/{organization_id}/documents/{document_id}/facts/{fact_id}`.
+* Reused the existing documents router.
+* Fact creation requires authentication and organization membership.
+* Fact creation explicitly allows owners and reviewers.
+* Fact creation rejects viewers and non-members.
+* Fact list and detail routes require authentication and organization
+  membership.
+* Fact list and detail routes explicitly allow owners, reviewers, and viewers.
+* Fact list and detail routes reject non-members.
+* Unknown organizations keep the existing safe HTTP 403 organization-access
+  behavior.
+* Missing, invalid, expired, unknown-user, and inactive-user tokens continue to
+  return HTTP 401.
+* Fact routes verify the path document belongs to the path organization before
+  creating, listing, or reading facts.
+* Documents from another organization are not accepted through fact routes.
+* Missing documents in an accessible organization return HTTP 404 with a safe
+  public message.
+* Fact creation calls `create_document_fact()`.
+* Fact listing calls `list_document_facts()`.
+* Fact detail calls `require_document_fact()`.
+* Successful fact creation commits and refreshes the created fact before
+  returning.
+* Fact validation errors return HTTP 400 with safe public messages.
+* Missing fact detail returns HTTP 404 with a safe public message.
+* Fact responses return safe metadata only.
+* Fact responses do not expose local absolute paths, raw passwords, password
+  hashes, or token internals.
+* Duplicate facts are still allowed.
+* No database migrations were added.
+* No file parsing, CSV fact import, control flags, duplicate detection, review
+  decisions, document status transitions, audit logging, exports, sample
+  outputs, CI files, local databases, or application container were added.
+* Added `tests/test_document_facts_api.py`.
+
+Files created or edited:
+
+```text
+src/vault/api/routes/documents.py
+src/vault/documents/schemas.py
+tests/test_document_facts_api.py
+docs/Project_State.md
+```
+
+Commands run:
+
+```bash
+python -m pytest tests/test_document_facts_api.py -q
+python -m pytest -q
+python -m pytest tests/test_document_fact_service.py \
+  tests/test_document_fact_model.py tests/test_document_model.py -q
+python -m pytest tests/test_document_service.py tests/test_document_read_api.py -q
+python -m pytest tests/test_document_upload_api.py -q
+python -m pytest tests/test_document_storage.py -q
+python -m pytest tests/test_alembic_config.py tests/test_api_health.py \
+  tests/test_config.py tests/test_database_config.py tests/test_package_import.py -q
+python -m pytest tests/test_auth_login_api.py tests/test_auth_login_service.py \
+  tests/test_auth_me_api.py tests/test_auth_registration_api.py \
+  tests/test_auth_tokens.py tests/test_current_user_dependency.py -q
+python -m pytest tests/test_organization_access_service.py \
+  tests/test_organization_create_api.py tests/test_organization_models.py \
+  tests/test_organization_rbac_dependency.py tests/test_organization_service.py \
+  tests/test_passwords.py tests/test_upload_validation.py tests/test_user_model.py \
+  tests/test_user_service.py -q
+python -m py_compile src/vault/api/routes/documents.py \
+  src/vault/documents/schemas.py src/vault/documents/service.py \
+  src/vault/exceptions.py tests/test_document_facts_api.py \
+  tests/test_document_fact_service.py
+python scripts/run_vault.py --help
+python -m alembic history
+python -m ruff check .
+python -m mypy src scripts tests
+python -m bandit -r src
+python -m pip_audit
+git status --short
+docker --version
+```
+
+Validation results:
+
+```text
+python -m pytest tests/test_document_facts_api.py -q
+Passed. 40 passed.
+
+python -m pytest -q
+Attempted. The sandbox command timed out after mid-suite progress, not after a
+reported test failure. The suite was then run in smaller groups.
+
+python -m pytest tests/test_document_fact_service.py \
+  tests/test_document_fact_model.py tests/test_document_model.py -q
+Passed. 65 passed.
+
+python -m pytest tests/test_document_service.py tests/test_document_read_api.py -q
+Passed. 62 passed.
+
+python -m pytest tests/test_document_upload_api.py -q
+Passed. 22 passed.
+
+python -m pytest tests/test_document_storage.py -q
+Passed. 25 passed.
+
+python -m pytest tests/test_alembic_config.py tests/test_api_health.py \
+  tests/test_config.py tests/test_database_config.py tests/test_package_import.py -q
+Passed. 35 passed.
+
+python -m pytest tests/test_auth_login_api.py tests/test_auth_login_service.py \
+  tests/test_auth_me_api.py tests/test_auth_registration_api.py \
+  tests/test_auth_tokens.py tests/test_current_user_dependency.py -q
+Passed. 51 passed.
+
+python -m pytest tests/test_organization_access_service.py \
+  tests/test_organization_create_api.py tests/test_organization_models.py \
+  tests/test_organization_rbac_dependency.py tests/test_organization_service.py \
+  tests/test_passwords.py tests/test_upload_validation.py tests/test_user_model.py \
+  tests/test_user_service.py -q
+Passed. 125 passed.
+
+python -m py_compile src/vault/api/routes/documents.py \
+  src/vault/documents/schemas.py src/vault/documents/service.py \
+  src/vault/exceptions.py tests/test_document_facts_api.py \
+  tests/test_document_fact_service.py
+Passed.
+
+python scripts/run_vault.py --help
+Passed. Help text displayed.
+
+python -m alembic history
+Passed. Alembic history shows 0005_create_document_facts as head. No Step 23
+migration was added.
+
+python -m ruff check .
+Could not run in this environment because Ruff is not installed in the active
+runtime.
+
+python -m mypy src scripts tests
+Could not run in this environment because mypy is not installed in the active
+runtime.
+
+python -m bandit -r src
+Could not run in this environment because Bandit is not installed in the active
+runtime.
+
+python -m pip_audit
+Could not run in this environment because pip-audit is not installed in the
+active runtime. No project vulnerability result was produced.
+
+git status --short
+Did not complete in this environment because the uploaded repo zip did not
+include `.git` metadata.
+
+Optional Docker-backed migration smoke check
+Skipped in this environment because Docker is not installed.
+```
+
+Definition of done:
+
+* `POST /organizations/{organization_id}/documents/{document_id}/facts` exists.
+* `GET /organizations/{organization_id}/documents/{document_id}/facts` exists.
+* `GET /organizations/{organization_id}/documents/{document_id}/facts/{fact_id}`
+  exists.
+* Fact routes require authentication.
+* Fact routes require organization membership.
+* Owners can create/list/read facts.
+* Reviewers can create/list/read facts.
+* Viewers can list/read facts.
+* Viewers cannot create facts.
+* Non-members cannot create/list/read facts.
+* Missing/invalid/expired tokens return authentication errors.
+* Fact creation validates fact input.
+* Fact creation persists a `DocumentFact` row.
+* Fact listing is scoped to the requested document.
+* Fact detail lookup is scoped by document ID and fact ID.
+* Documents from other organizations cannot be used through fact routes.
+* Facts from other documents are not leaked.
+* Missing documents return safe not-found behavior.
+* Missing facts return safe not-found behavior.
+* Responses return safe fact metadata.
+* Responses do not expose absolute local paths.
+* Responses do not expose raw passwords.
+* Responses do not expose password hashes.
+* Routes appear in OpenAPI.
+* Duplicate facts are still allowed.
+* No file parsing is added yet.
+* No control flags are added yet.
+* No duplicate detection is added yet.
+* No audit logging is added yet.
+* No exports are added yet.
+* No migrations are added in this step.
+* Tests cover successful fact creation, role behavior, auth failure, validation
+  failure, organization scoping, document scoping, fact scoping, safe
+  responses, and OpenAPI inclusion.
+* Existing tests were validated in smaller groups due to sandbox timeout.
+* Pytest groups pass.
+* CLI help works.
+* Alembic history works.
+* Project State is updated.
+* No generated private/local files are included.
+
+Suggested commit message:
+
+```text
+Add document facts API route
 ```
 
 ## Portfolio readiness checklist
