@@ -37,11 +37,11 @@ Project-control rule:
 
 ## Current status
 
-Current step: Step 21 — Document facts model and migration.
+Current step: Step 22 — Document facts service.
 
 Status: Complete with documented environment limitations.
 
-Approximate project completion: 72%.
+Approximate project completion: 75%.
 
 Current summary:
 
@@ -60,7 +60,8 @@ Current summary:
 * Custom Vault exceptions exist for base project errors, validation failures,
   duplicate user creation attempts, authentication failures, inactive-user
   authentication attempts, organization validation failures, document
-  metadata validation failures, and safe document-not-found behavior.
+  metadata validation failures, safe document-not-found behavior, document
+  fact validation failures, and safe document-fact-not-found behavior.
 * A minimal FastAPI app factory exists at `src/vault/api/main.py`.
 * The app is configured with the Vault title, honest description, and package
   version.
@@ -419,6 +420,36 @@ Current summary:
   and its supporting indexes.
 * The create-document-facts migration downgrade drops only the
   `document_facts` table after dropping its supporting indexes.
+* `src/vault/documents/service.py` provides typed document facts service
+  behavior.
+* `create_document_fact()` creates one structured `DocumentFact` record for a
+  supplied document ID.
+* Document fact creation stores vendor name, optional invoice number, optional
+  invoice date, optional due date, amount cents, currency, category, and
+  optional memo.
+* Document fact creation trims simple metadata string fields.
+* Optional blank or whitespace-only invoice numbers and memos are converted to
+  `None`.
+* Currency is normalized to uppercase before storage.
+* Document fact creation rejects blank vendor names, blank currencies, malformed
+  currencies, blank categories, and non-positive amounts.
+* Currency must be exactly three letters after normalization.
+* Document fact records are added to the supplied session and flushed so
+  generated IDs are available.
+* Document fact creation does not commit automatically.
+* Duplicate document facts are still allowed because duplicate detection has not
+  been implemented yet.
+* Document fact creation does not update document status.
+* Document fact creation does not create control flags.
+* Document fact creation does not verify organization membership; route-level
+  organization access remains deferred to the future document facts API route.
+* `list_document_facts()` returns only facts for the requested document.
+* Document fact listing is deterministic, oldest first by `created_at`, with
+  `id` as a tie-breaker.
+* `get_document_fact()` scopes lookup by both `document_id` and `fact_id`.
+* `require_document_fact()` raises a safe custom exception when a scoped fact is
+  missing.
+* Facts from another document are not returned by scoped lookup.
 * Upload API tests use temporary upload directories and dependency-overridden
   database sessions, so they do not require Docker, PostgreSQL, network ports,
   real credentials, or private environment variables.
@@ -426,28 +457,36 @@ Current summary:
   delete the stored file as rollback cleanup; that cleanup is deferred rather
   than making this route step larger.
 * No membership management API routes, document download routes, document facts
-  service, document facts API routes, control flags, duplicate detection,
-  reviews, audit logs, exports, refresh tokens, password reset, email
-  verification, CI files, sample outputs, local databases beyond metadata
-  migrations, or application container were added.
+  API routes, control flags, duplicate detection, reviews, audit logs,
+  exports, refresh tokens, password reset, email verification, CI files,
+  sample outputs, local databases beyond metadata migrations, or
+  application container were added.
 
 Current validation status:
 
 ```text
-Step 21 validation was run in the uploaded runtime with partial tooling
+Step 22 validation was run in the uploaded runtime with partial tooling
 limitations.
 
-python -m pytest tests/test_document_fact_model.py tests/test_alembic_config.py -q
-Passed. 35 passed.
+python -m pytest tests/test_document_fact_service.py -q
+Passed. 38 passed.
 
 python -m pytest -q
 Attempted. The sandbox command timed out after mid-suite progress, not after a
 reported test failure. To compensate, the suite was run in smaller groups.
 
-python -m pytest tests/test_document_fact_model.py tests/test_document_model.py \
-  tests/test_document_service.py tests/test_document_read_api.py \
-  tests/test_document_upload_api.py tests/test_document_storage.py -q
-Passed. 136 passed.
+python -m pytest tests/test_document_fact_service.py \
+  tests/test_document_fact_model.py tests/test_document_model.py -q
+Passed. 65 passed.
+
+python -m pytest tests/test_document_service.py tests/test_document_read_api.py -q
+Passed. 62 passed.
+
+python -m pytest tests/test_document_upload_api.py -q
+Passed. 22 passed.
+
+python -m pytest tests/test_document_storage.py -q
+Passed. 25 passed.
 
 python -m pytest tests/test_alembic_config.py tests/test_api_health.py \
   tests/test_config.py tests/test_database_config.py tests/test_package_import.py -q
@@ -465,9 +504,8 @@ python -m pytest tests/test_organization_access_service.py \
   tests/test_user_service.py -q
 Passed. 125 passed.
 
-python -m py_compile src/vault/documents/models.py src/vault/models.py \
-  alembic/versions/0005_create_document_facts.py \
-  tests/test_document_fact_model.py tests/test_alembic_config.py
+python -m py_compile src/vault/documents/service.py src/vault/exceptions.py \
+  tests/test_document_fact_service.py
 Passed.
 
 python scripts/run_vault.py --help
@@ -476,7 +514,7 @@ Passed. Help text displayed.
 python -m alembic history
 Passed. Alembic history shows 0001_baseline, 0002_create_users,
 0003_orgs_memberships, 0004_create_documents, and
-0005_create_document_facts as head.
+0005_create_document_facts as head. No Step 22 migration was added.
 
 python -m ruff check .
 Could not run in this environment because Ruff is not installed in the active
@@ -520,7 +558,7 @@ Validation rule:
 Next planned step:
 
 ```text
-Step 22 — Document facts service.
+Step 23 — Document facts API route.
 ```
 
 
@@ -5356,6 +5394,214 @@ Suggested commit message:
 Add document facts model
 ```
 
+
+
+### Step 22 — Document facts service
+
+Status: Complete with documented environment limitations.
+
+Goal:
+
+* Add a directly testable document facts service that creates, validates, lists,
+  and retrieves structured document facts for an existing document, without
+  adding API routes yet.
+
+Completed work:
+
+* Added `DocumentFactValidationError` in `src/vault/exceptions.py`.
+* Added `DocumentFactNotFoundError` in `src/vault/exceptions.py`.
+* Added typed `create_document_fact()` service behavior in
+  `src/vault/documents/service.py`.
+* The service accepts a SQLAlchemy `Session`, document ID, vendor name, amount
+  cents, currency, category, and optional invoice number, invoice date, due
+  date, and memo.
+* The service creates a `DocumentFact` record and adds it to the supplied
+  session.
+* The service flushes so generated fact IDs are available.
+* The service does not commit automatically.
+* Vendor name, invoice number, currency, category, and memo are trimmed.
+* Whitespace-only optional invoice numbers and memos are stored as `None`.
+* Currency is normalized to uppercase.
+* Blank vendor names are rejected.
+* Blank currencies are rejected.
+* Malformed currencies are rejected.
+* Blank categories are rejected.
+* Zero and negative amounts are rejected.
+* Optional invoice number, invoice date, due date, and memo may be omitted.
+* Duplicate facts are allowed for now.
+* The service does not update document status.
+* The service does not create control flags.
+* The service does not verify organization membership.
+* Added typed `list_document_facts()` helper.
+* Fact listing is scoped to one document ID.
+* Fact listing uses deterministic oldest-first ordering by `created_at`, with
+  `id` as a tie-breaker.
+* Added typed `get_document_fact()` helper.
+* Fact detail lookup scopes by both document ID and fact ID.
+* Added typed `require_document_fact()` helper.
+* Missing required fact lookup raises a safe custom not-found exception.
+* Facts from another document are not returned by scoped lookup.
+* Added `tests/test_document_fact_service.py`.
+* Existing Step 1 through Step 21 behavior remains compatible in the tested
+  groups.
+* No document facts API route, file parsing, CSV fact import, control flags,
+  duplicate detection behavior, review decisions, audit logging, exports,
+  sample output, CI files, local databases, migrations, or application
+  container were added.
+
+Files created or edited:
+
+```text
+src/vault/documents/service.py
+src/vault/exceptions.py
+tests/test_document_fact_service.py
+docs/Project_State.md
+```
+
+Commands run:
+
+```bash
+python -m pytest tests/test_document_fact_service.py -q
+python -m pytest -q
+python -m pytest tests/test_document_fact_service.py \
+  tests/test_document_fact_model.py tests/test_document_model.py -q
+python -m pytest tests/test_document_service.py tests/test_document_read_api.py -q
+python -m pytest tests/test_document_upload_api.py -q
+python -m pytest tests/test_document_storage.py -q
+python -m pytest tests/test_alembic_config.py tests/test_api_health.py \
+  tests/test_config.py tests/test_database_config.py tests/test_package_import.py -q
+python -m pytest tests/test_auth_login_api.py tests/test_auth_login_service.py \
+  tests/test_auth_me_api.py tests/test_auth_registration_api.py \
+  tests/test_auth_tokens.py tests/test_current_user_dependency.py -q
+python -m pytest tests/test_organization_access_service.py \
+  tests/test_organization_create_api.py tests/test_organization_models.py \
+  tests/test_organization_rbac_dependency.py tests/test_organization_service.py \
+  tests/test_passwords.py tests/test_upload_validation.py tests/test_user_model.py \
+  tests/test_user_service.py -q
+python -m py_compile src/vault/documents/service.py src/vault/exceptions.py \
+  tests/test_document_fact_service.py
+python scripts/run_vault.py --help
+python -m alembic history
+python -m ruff check .
+python -m mypy src scripts tests
+python -m bandit -r src
+python -m pip_audit
+git status --short
+docker --version
+```
+
+Validation results:
+
+```text
+python -m pytest tests/test_document_fact_service.py -q
+Passed. 38 passed.
+
+python -m pytest -q
+Attempted. The sandbox command timed out after mid-suite progress, not after a
+reported test failure. The suite was then run in smaller groups.
+
+python -m pytest tests/test_document_fact_service.py \
+  tests/test_document_fact_model.py tests/test_document_model.py -q
+Passed. 65 passed.
+
+python -m pytest tests/test_document_service.py tests/test_document_read_api.py -q
+Passed. 62 passed.
+
+python -m pytest tests/test_document_upload_api.py -q
+Passed. 22 passed.
+
+python -m pytest tests/test_document_storage.py -q
+Passed. 25 passed.
+
+python -m pytest tests/test_alembic_config.py tests/test_api_health.py \
+  tests/test_config.py tests/test_database_config.py tests/test_package_import.py -q
+Passed. 35 passed.
+
+python -m pytest tests/test_auth_login_api.py tests/test_auth_login_service.py \
+  tests/test_auth_me_api.py tests/test_auth_registration_api.py \
+  tests/test_auth_tokens.py tests/test_current_user_dependency.py -q
+Passed. 51 passed.
+
+python -m pytest tests/test_organization_access_service.py \
+  tests/test_organization_create_api.py tests/test_organization_models.py \
+  tests/test_organization_rbac_dependency.py tests/test_organization_service.py \
+  tests/test_passwords.py tests/test_upload_validation.py tests/test_user_model.py \
+  tests/test_user_service.py -q
+Passed. 125 passed.
+
+python -m py_compile src/vault/documents/service.py src/vault/exceptions.py \
+  tests/test_document_fact_service.py
+Passed.
+
+python scripts/run_vault.py --help
+Passed. Help text displayed.
+
+python -m alembic history
+Passed. Alembic history shows 0005_create_document_facts as head. No Step 22
+migration was added.
+
+python -m ruff check .
+Could not run in this environment because Ruff is not installed in the active
+runtime.
+
+python -m mypy src scripts tests
+Could not run in this environment because mypy is not installed in the active
+runtime.
+
+python -m bandit -r src
+Could not run in this environment because Bandit is not installed in the active
+runtime.
+
+python -m pip_audit
+Could not run in this environment because pip-audit is not installed in the
+active runtime. No project vulnerability result was produced.
+
+git status --short
+Did not complete in this environment because the uploaded repo zip did not
+include `.git` metadata.
+
+Optional Docker-backed migration smoke check
+Skipped in this environment because Docker is not installed.
+```
+
+Definition of done:
+
+* Document facts creation service exists.
+* Service creates a `DocumentFact` record.
+* Service validates required fact fields.
+* Service rejects blank required strings.
+* Service rejects malformed currency.
+* Service rejects non-positive amounts.
+* Service trims simple metadata strings.
+* Service flushes so generated IDs are available.
+* Service does not commit automatically.
+* Duplicate facts are still allowed.
+* Fact listing helper exists.
+* Fact detail helper exists.
+* Required fact helper exists.
+* Fact lookup is scoped by document ID and fact ID.
+* Facts from another document are not leaked.
+* No facts API route is added yet.
+* No file parsing is added yet.
+* No control flags are added yet.
+* No duplicate detection is added yet.
+* No audit logging is added yet.
+* No exports are added yet.
+* No migrations are added in this step.
+* Tests cover creation, validation, optional fields, duplicate allowance,
+  listing, scoped lookup, and safe not-found behavior.
+* Existing tests were validated in smaller groups due to sandbox timeout.
+* Pytest groups pass.
+* CLI help works.
+* Alembic history works.
+* Project State is updated.
+* No generated private/local files are included.
+
+Suggested commit message:
+
+```text
+Add document facts service
+```
 
 ## Portfolio readiness checklist
 

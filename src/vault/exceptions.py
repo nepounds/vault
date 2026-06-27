@@ -55,3 +55,11 @@ class DocumentUploadValidationError(DocumentError):
 
 class DocumentNotFoundError(DocumentError):
     """Raised when requested document metadata cannot be found."""
+
+
+class DocumentFactValidationError(DocumentError):
+    """Raised when structured document fact data fails validation."""
+
+
+class DocumentFactNotFoundError(DocumentError):
+    """Raised when requested document fact metadata cannot be found."""
