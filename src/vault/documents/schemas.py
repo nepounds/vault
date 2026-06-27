@@ -10,8 +10,8 @@ from pydantic import BaseModel, ConfigDict
 from vault.documents.statuses import DocumentStatusValue
 
 
-class DocumentUploadResponse(BaseModel):
-    """Safe response body for uploaded document metadata."""
+class DocumentResponse(BaseModel):
+    """Safe response body for document metadata."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -25,3 +25,7 @@ class DocumentUploadResponse(BaseModel):
     sha256_hash: str
     status: DocumentStatusValue
     created_at: datetime
+
+
+class DocumentUploadResponse(DocumentResponse):
+    """Safe response body for uploaded document metadata."""

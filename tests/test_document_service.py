@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import uuid
 from collections.abc import Iterator
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -381,3 +383,128 @@ def test_create_document_metadata_creates_no_files_on_disk(
     )
 
     assert list(work_dir.iterdir()) == []
+
+
+def test_list_documents_for_organization_scopes_by_organization_id(
+    session: Session,
+    organization: Organization,
+    uploader: User,
+) -> None:
+    other_result = create_organization(
+        session,
+        creator=uploader,
+        name="Other Company",
+    )
+    expected = create_valid_document(
+        session,
+        organization=organization,
+        uploader=uploader,
+        original_filename="expected.pdf",
+        sha256_hash="c" * 64,
+    )
+    create_valid_document(
+        session,
+        organization=other_result.organization,
+        uploader=uploader,
+        original_filename="other.pdf",
+        sha256_hash="d" * 64,
+    )
+
+    from vault.documents.service import list_documents_for_organization
+
+    documents = list_documents_for_organization(
+        session,
+        organization_id=organization.id,
+    )
+
+    assert documents == [expected]
+
+
+def test_list_documents_for_organization_uses_newest_first_order(
+    session: Session,
+    organization: Organization,
+    uploader: User,
+) -> None:
+    older = create_valid_document(
+        session,
+        organization=organization,
+        uploader=uploader,
+        original_filename="older.pdf",
+        sha256_hash="c" * 64,
+    )
+    newer = create_valid_document(
+        session,
+        organization=organization,
+        uploader=uploader,
+        original_filename="newer.pdf",
+        sha256_hash="d" * 64,
+    )
+    older.created_at = datetime(2026, 1, 1, tzinfo=UTC)
+    newer.created_at = datetime(2026, 1, 2, tzinfo=UTC)
+    session.flush()
+
+    from vault.documents.service import list_documents_for_organization
+
+    documents = list_documents_for_organization(
+        session,
+        organization_id=organization.id,
+    )
+
+    assert documents == [newer, older]
+
+
+def test_get_document_for_organization_scopes_by_organization_and_document_id(
+    session: Session,
+    organization: Organization,
+    uploader: User,
+) -> None:
+    other_result = create_organization(
+        session,
+        creator=uploader,
+        name="Other Detail Company",
+    )
+    document = create_valid_document(
+        session,
+        organization=organization,
+        uploader=uploader,
+        original_filename="detail.pdf",
+        sha256_hash="c" * 64,
+    )
+    other_document = create_valid_document(
+        session,
+        organization=other_result.organization,
+        uploader=uploader,
+        original_filename="other-detail.pdf",
+        sha256_hash="d" * 64,
+    )
+
+    from vault.documents.service import get_document_for_organization
+
+    found = get_document_for_organization(
+        session,
+        organization_id=organization.id,
+        document_id=document.id,
+    )
+    cross_org = get_document_for_organization(
+        session,
+        organization_id=organization.id,
+        document_id=other_document.id,
+    )
+
+    assert found == document
+    assert cross_org is None
+
+
+def test_require_document_for_organization_raises_safe_exception_when_missing(
+    session: Session,
+    organization: Organization,
+) -> None:
+    from vault.documents.service import require_document_for_organization
+    from vault.exceptions import DocumentNotFoundError
+
+    with pytest.raises(DocumentNotFoundError, match="Document was not found"):
+        require_document_for_organization(
+            session,
+            organization_id=organization.id,
+            document_id=uuid.uuid4(),
+        )

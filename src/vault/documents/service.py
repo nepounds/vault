@@ -5,11 +5,12 @@ from __future__ import annotations
 import string
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from vault.documents.models import Document
 from vault.documents.statuses import DocumentStatus
-from vault.exceptions import DocumentValidationError
+from vault.exceptions import DocumentNotFoundError, DocumentValidationError
 
 _SHA256_HEX_LENGTH = 64
 _LOWERCASE_HEX_DIGITS = frozenset(string.hexdigits.lower())
@@ -54,6 +55,54 @@ def create_document_metadata(
     )
     session.add(document)
     session.flush()
+
+    return document
+
+
+def list_documents_for_organization(
+    session: Session,
+    *,
+    organization_id: UUID,
+) -> list[Document]:
+    """List document metadata for one organization, newest first."""
+    statement = (
+        select(Document)
+        .where(Document.organization_id == organization_id)
+        .order_by(Document.created_at.desc(), Document.id.desc())
+    )
+
+    return list(session.scalars(statement))
+
+
+def get_document_for_organization(
+    session: Session,
+    *,
+    organization_id: UUID,
+    document_id: UUID,
+) -> Document | None:
+    """Return one organization-scoped document, or None when missing."""
+    statement = select(Document).where(
+        Document.organization_id == organization_id,
+        Document.id == document_id,
+    )
+
+    return session.scalar(statement)
+
+
+def require_document_for_organization(
+    session: Session,
+    *,
+    organization_id: UUID,
+    document_id: UUID,
+) -> Document:
+    """Return one organization-scoped document or raise a safe not-found error."""
+    document = get_document_for_organization(
+        session,
+        organization_id=organization_id,
+        document_id=document_id,
+    )
+    if document is None:
+        raise DocumentNotFoundError("Document was not found.")
 
     return document
 

@@ -13,7 +13,7 @@ from vault.api.routes.organizations import router as organizations_router
 APP_DESCRIPTION = (
     "Minimal Vault API shell for the secure accounting document workflow app. "
     "Current behavior is limited to health, OpenAPI, registration, login, "
-    "current-user lookup, organization creation, and document upload. "
+    "current-user lookup, organizations, uploads, and document reads. "
     "Reviews, audit logs, and exports are planned later."
 )
 

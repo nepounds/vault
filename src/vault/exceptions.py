@@ -51,3 +51,7 @@ class DocumentValidationError(DocumentError):
 
 class DocumentUploadValidationError(DocumentError):
     """Raised when upload metadata fails validation."""
+
+
+class DocumentNotFoundError(DocumentError):
+    """Raised when requested document metadata cannot be found."""

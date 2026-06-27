@@ -37,11 +37,11 @@ Project-control rule:
 
 ## Current status
 
-Current step: Step 19 — Document upload API route.
+Current step: Step 20 — Document listing and detail routes.
 
 Status: Complete with documented environment limitations.
 
-Approximate project completion: 67%.
+Approximate project completion: 70%.
 
 Current summary:
 
@@ -59,8 +59,8 @@ Current summary:
   secrets.
 * Custom Vault exceptions exist for base project errors, validation failures,
   duplicate user creation attempts, authentication failures, inactive-user
-  authentication attempts, organization validation failures, and document
-  metadata validation failures.
+  authentication attempts, organization validation failures, document
+  metadata validation failures, and safe document-not-found behavior.
 * A minimal FastAPI app factory exists at `src/vault/api/main.py`.
 * The app is configured with the Vault title, honest description, and package
   version.
@@ -125,6 +125,33 @@ Current summary:
   raw passwords, password hashes, or token internals.
 * `POST /organizations/{organization_id}/documents/upload` appears in the
   OpenAPI schema.
+* `GET /organizations/{organization_id}/documents` exists and returns safe
+  document metadata for one organization.
+* `GET /organizations/{organization_id}/documents/{document_id}` exists and
+  returns safe metadata for one organization-scoped document.
+* Document listing and detail routes require a valid bearer token for an
+  active user.
+* Document listing and detail routes require organization membership through
+  the reusable organization RBAC dependency.
+* Document listing and detail routes explicitly allow owners, reviewers, and
+  viewers.
+* Document listing and detail routes reject non-members and unknown
+  organizations with the existing safe HTTP 403 organization-access error.
+* Missing, invalid, expired, unknown-user, and inactive-user bearer tokens
+  continue to return HTTP 401 before document read behavior runs.
+* Document listing is scoped to the requested organization.
+* Document listing returns newest documents first by `created_at`, with `id`
+  as a deterministic tie-breaker.
+* Document detail lookup scopes by both `organization_id` and `document_id`.
+* Document detail lookup returns HTTP 404 with a safe public message when a
+  document is missing or belongs to a different accessible organization.
+* Document read responses return safe document metadata only.
+* Document read responses do not expose local absolute stored paths, raw
+  passwords, password hashes, or token internals.
+* `GET /organizations/{organization_id}/documents` appears in the OpenAPI
+  schema.
+* `GET /organizations/{organization_id}/documents/{document_id}` appears in
+  the OpenAPI schema.
 * `src/vault/api/dependencies.py` provides a database session dependency that
   yields and safely closes a SQLAlchemy session.
 * The database session dependency creates no global database connection at
@@ -355,43 +382,64 @@ Current summary:
   fails safely if a generated target filename already exists.
 * Upload storage performs no database access, FastAPI request handling,
   document metadata creation, duplicate detection, or audit logging by itself.
-* `src/vault/documents/schemas.py` defines a safe upload response schema for
+* `src/vault/documents/schemas.py` defines safe document response schemas for
   document metadata.
-* `src/vault/api/routes/documents.py` provides the organization-scoped document
-  upload API route.
+* `src/vault/api/routes/documents.py` provides the organization-scoped
+  document upload, listing, and detail API routes.
 * Upload API tests use temporary upload directories and dependency-overridden
   database sessions, so they do not require Docker, PostgreSQL, network ports,
   real credentials, or private environment variables.
 * If storage succeeds but the database commit later fails, Step 19 does not yet
   delete the stored file as rollback cleanup; that cleanup is deferred rather
   than making this route step larger.
-* No membership management API routes, document listing/detail/download routes,
-  document facts, reviews, audit logs, exports, refresh tokens, password reset,
-  email verification, CI files, sample outputs, local databases beyond metadata
+* No membership management API routes, document download routes, document
+  facts, reviews, audit logs, exports, refresh tokens, password reset, email
+  verification, CI files, sample outputs, local databases beyond metadata
   migrations, or application container were added.
 
 Current validation status:
 
 ```text
-Step 19 validation was run in the uploaded runtime with partial tooling
+Step 20 validation was run in the uploaded runtime with partial tooling
 limitations.
 
-python -m pytest tests/test_document_upload_api.py -q
-Passed. 22 passed.
+python -m pytest tests/test_document_service.py tests/test_document_read_api.py -q
+Passed. 62 passed.
 
 python -m pytest -q
-Attempted. The sandbox command timed out after reaching late test progress,
-not after a reported test failure. To compensate, the remaining tail test files
-were run separately.
+Attempted. The sandbox command timed out after mid-suite progress, not after a
+reported test failure. To compensate, the suite was run in smaller groups.
 
-python -m pytest tests/test_package_import.py tests/test_passwords.py \
+python -m pytest tests/test_document_storage.py \
+  tests/test_document_upload_api.py tests/test_organization_access_service.py -q
+Passed. 63 passed.
+
+python -m pytest tests/test_organization_create_api.py \
+  tests/test_organization_models.py -q
+Passed. 34 passed.
+
+python -m pytest tests/test_organization_rbac_dependency.py -q
+Passed. 20 passed.
+
+python -m pytest tests/test_alembic_config.py tests/test_api_health.py \
+  tests/test_auth_login_api.py tests/test_auth_login_service.py \
+  tests/test_auth_me_api.py tests/test_auth_registration_api.py \
+  tests/test_auth_tokens.py tests/test_config.py \
+  tests/test_current_user_dependency.py tests/test_database_config.py \
+  tests/test_document_model.py tests/test_document_read_api.py \
+  tests/test_document_service.py -q
+Passed. 154 passed.
+
+python -m pytest tests/test_organization_service.py \
+  tests/test_package_import.py tests/test_passwords.py \
   tests/test_upload_validation.py tests/test_user_model.py \
   tests/test_user_service.py -q
-Passed. 48 passed.
+Passed. 59 passed.
 
 python -m py_compile src/vault/api/routes/documents.py \
-  src/vault/documents/schemas.py src/vault/api/main.py \
-  tests/test_document_upload_api.py
+  src/vault/documents/schemas.py src/vault/documents/service.py \
+  src/vault/exceptions.py tests/test_document_read_api.py \
+  tests/test_document_service.py
 Passed.
 
 python scripts/run_vault.py --help
@@ -399,7 +447,7 @@ Passed. Help text displayed.
 
 python -m alembic history
 Passed. Alembic history shows 0001_baseline, 0002_create_users,
-0003_orgs_memberships, and 0004_create_documents as head. No Step 19
+0003_orgs_memberships, and 0004_create_documents as head. No Step 20
 migration was added.
 
 python -m ruff check .
@@ -444,7 +492,7 @@ Validation rule:
 Next planned step:
 
 ```text
-Step 20 — Document listing and detail routes.
+Step 21 — Document facts model and migration.
 ```
 
 
@@ -4840,6 +4888,248 @@ Suggested commit message:
 
 ```text
 Add document upload API route
+```
+
+
+
+### Step 20 — Document listing and detail routes
+
+Status: Complete with documented environment limitations.
+
+Goal:
+
+* Add authenticated, organization-scoped document listing and document detail
+  API routes that return safe document metadata only, without adding downloads
+  or document facts yet.
+
+Completed work:
+
+* Added `DocumentResponse` as a generic safe document metadata response schema.
+* Kept `DocumentUploadResponse` available for the existing upload route by
+  deriving it from the generic document response schema.
+* Added `DocumentNotFoundError` as a safe custom document service exception.
+* Added `list_documents_for_organization()` in
+  `src/vault/documents/service.py`.
+* Added `get_document_for_organization()` in
+  `src/vault/documents/service.py`.
+* Added `require_document_for_organization()` in
+  `src/vault/documents/service.py`.
+* Document listing is scoped by organization ID.
+* Document listing returns newest documents first by `created_at`, with `id` as
+  a deterministic tie-breaker.
+* Document detail lookup scopes by both organization ID and document ID.
+* Missing document detail raises a safe custom exception at the service layer.
+* Added `GET /organizations/{organization_id}/documents`.
+* Added `GET /organizations/{organization_id}/documents/{document_id}`.
+* Reused the existing documents router from Step 19.
+* Both read routes require authentication through the existing current-user
+  dependency chain.
+* Both read routes require organization membership through the existing
+  `require_organization_roles()` dependency factory.
+* Both read routes explicitly allow owners, reviewers, and viewers.
+* Non-members and unknown organizations are rejected with the existing safe
+  HTTP 403 organization-access behavior.
+* Missing, invalid, expired, unknown-user, and inactive-user tokens continue to
+  return HTTP 401 before document read behavior runs.
+* Missing documents return HTTP 404 with a safe public not-found message.
+* Detail lookup does not return documents from another organization even when
+  the path organization is accessible.
+* Read responses include only safe document metadata: `id`, `organization_id`,
+  `uploaded_by_user_id`, `original_filename`, `stored_filename`,
+  `content_type`, `file_size_bytes`, `sha256_hash`, `status`, and
+  `created_at`.
+* Read responses do not expose local absolute stored paths, token internals,
+  raw passwords, or password hashes.
+* Added `tests/test_document_read_api.py`.
+* Added service read-helper coverage in `tests/test_document_service.py`.
+* Route tests cover owner, reviewer, and viewer list/detail access.
+* Route tests cover non-member denial.
+* Route tests cover missing, invalid, expired, and inactive-user token behavior.
+* Route tests cover organization scoping and cross-organization leak
+  prevention.
+* Route tests cover safe response metadata and OpenAPI inclusion.
+* Service tests cover organization-scoped listing, deterministic ordering,
+  scoped detail lookup, and safe not-found exceptions.
+* Existing Step 1 through Step 19 behavior remains compatible in the tested
+  groups.
+* No file download route, serving local uploaded files, document facts, control
+  flags, duplicate detection, reviews, audit logs, CSV exports, sample outputs,
+  migrations, CI files, local databases, or application container were added.
+
+Files created or edited:
+
+```text
+src/vault/api/main.py
+src/vault/api/routes/documents.py
+src/vault/documents/schemas.py
+src/vault/documents/service.py
+src/vault/exceptions.py
+tests/test_document_read_api.py
+tests/test_document_service.py
+docs/Project_State.md
+```
+
+Commands run:
+
+```bash
+python -m pytest tests/test_document_service.py tests/test_document_read_api.py -q
+python -m pytest -q
+python -m pytest tests/test_document_storage.py \
+  tests/test_document_upload_api.py tests/test_organization_access_service.py -q
+python -m pytest tests/test_organization_create_api.py \
+  tests/test_organization_models.py -q
+python -m pytest tests/test_organization_rbac_dependency.py -q
+python -m pytest tests/test_alembic_config.py tests/test_api_health.py \
+  tests/test_auth_login_api.py tests/test_auth_login_service.py \
+  tests/test_auth_me_api.py tests/test_auth_registration_api.py \
+  tests/test_auth_tokens.py tests/test_config.py \
+  tests/test_current_user_dependency.py tests/test_database_config.py \
+  tests/test_document_model.py tests/test_document_read_api.py \
+  tests/test_document_service.py -q
+python -m pytest tests/test_organization_service.py \
+  tests/test_package_import.py tests/test_passwords.py \
+  tests/test_upload_validation.py tests/test_user_model.py \
+  tests/test_user_service.py -q
+python -m py_compile src/vault/api/routes/documents.py \
+  src/vault/documents/schemas.py src/vault/documents/service.py \
+  src/vault/exceptions.py tests/test_document_read_api.py \
+  tests/test_document_service.py
+python scripts/run_vault.py --help
+python -m alembic history
+python -m ruff check .
+python -m mypy src scripts tests
+python -m bandit -r src
+python -m pip_audit
+git status --short
+docker --version
+```
+
+Validation results:
+
+```text
+python -m pytest tests/test_document_service.py tests/test_document_read_api.py -q
+Passed. 62 passed.
+
+python -m pytest -q
+Attempted. The sandbox command timed out after mid-suite progress, not after a
+reported test failure. The suite was then run in smaller groups.
+
+python -m pytest tests/test_document_storage.py \
+  tests/test_document_upload_api.py tests/test_organization_access_service.py -q
+Passed. 63 passed.
+
+python -m pytest tests/test_organization_create_api.py \
+  tests/test_organization_models.py -q
+Passed. 34 passed.
+
+python -m pytest tests/test_organization_rbac_dependency.py -q
+Passed. 20 passed.
+
+python -m pytest tests/test_alembic_config.py tests/test_api_health.py \
+  tests/test_auth_login_api.py tests/test_auth_login_service.py \
+  tests/test_auth_me_api.py tests/test_auth_registration_api.py \
+  tests/test_auth_tokens.py tests/test_config.py \
+  tests/test_current_user_dependency.py tests/test_database_config.py \
+  tests/test_document_model.py tests/test_document_read_api.py \
+  tests/test_document_service.py -q
+Passed. 154 passed.
+
+python -m pytest tests/test_organization_service.py \
+  tests/test_package_import.py tests/test_passwords.py \
+  tests/test_upload_validation.py tests/test_user_model.py \
+  tests/test_user_service.py -q
+Passed. 59 passed.
+
+python -m py_compile src/vault/api/routes/documents.py \
+  src/vault/documents/schemas.py src/vault/documents/service.py \
+  src/vault/exceptions.py tests/test_document_read_api.py \
+  tests/test_document_service.py
+Passed.
+
+python scripts/run_vault.py --help
+Passed. Help text displayed.
+
+python -m alembic history
+Passed. Alembic history shows 0001_baseline, 0002_create_users,
+0003_orgs_memberships, and 0004_create_documents as head. No Step 20
+migration was added.
+
+python -m ruff check .
+Could not run in this environment because Ruff is not installed in the active
+runtime.
+
+python -m mypy src scripts tests
+Could not run in this environment because mypy is not installed in the active
+runtime.
+
+python -m bandit -r src
+Could not run in this environment because Bandit is not installed in the active
+runtime.
+
+python -m pip_audit
+Could not run in this environment because pip-audit is not installed in the
+active runtime. No project vulnerability result was produced.
+
+git status --short
+Did not complete in this environment because the uploaded repo zip did not
+include `.git` metadata.
+
+Optional Docker-backed migration smoke check
+Skipped in this environment because Docker is not installed.
+```
+
+Validation note:
+
+```text
+Step 20 is complete in the uploaded runtime with documented tooling
+limitations. The new read API and service tests passed, CLI help passed,
+Alembic history passed, and syntax compilation passed. Full pytest was
+attempted but timed out in the sandbox without a reported failure, so the suite
+was run in smaller groups and those groups passed. Ruff, mypy, Bandit,
+pip-audit, git status, and Docker-backed migration checks should be run locally
+before committing.
+```
+
+Definition of done:
+
+* `GET /organizations/{organization_id}/documents` exists.
+* `GET /organizations/{organization_id}/documents/{document_id}` exists.
+* List route requires authentication.
+* Detail route requires authentication.
+* List route requires organization membership.
+* Detail route requires organization membership.
+* Owners can list/read documents.
+* Reviewers can list/read documents.
+* Viewers can list/read documents.
+* Non-members cannot list/read documents.
+* Missing/invalid/expired tokens return authentication errors.
+* Listing is scoped to the requested organization.
+* Detail lookup is scoped by both organization ID and document ID.
+* Documents from other organizations are not leaked.
+* Missing documents return safe not-found behavior.
+* Responses return safe document metadata.
+* Responses do not expose absolute local paths.
+* Responses do not expose raw passwords.
+* Responses do not expose password hashes.
+* Routes appear in OpenAPI.
+* No file download route is added yet.
+* No document facts are added yet.
+* No audit logging is added yet.
+* No exports are added yet.
+* No migrations are added in this step.
+* Tests cover successful reads, role behavior, auth failure, organization
+  scoping, safe responses, and not-found behavior.
+* Existing tests were validated in smaller groups due to sandbox timeout.
+* Pytest groups pass.
+* CLI help works.
+* Alembic history works.
+* Project State is updated.
+* No generated private/local files are included.
+
+Suggested commit message:
+
+```text
+Add document read API routes
 ```
 
 

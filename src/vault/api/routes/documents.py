@@ -16,15 +16,35 @@ from vault.api.dependencies import (
 )
 from vault.auth.models import User
 from vault.config import load_settings
-from vault.documents.schemas import DocumentUploadResponse
-from vault.documents.service import create_document_metadata
+from vault.documents.schemas import DocumentResponse, DocumentUploadResponse
+from vault.documents.service import (
+    create_document_metadata,
+    list_documents_for_organization,
+    require_document_for_organization,
+)
 from vault.documents.storage import store_upload_bytes
 from vault.documents.validation import validate_upload_metadata
-from vault.exceptions import DocumentUploadValidationError, DocumentValidationError
+from vault.exceptions import (
+    DocumentNotFoundError,
+    DocumentUploadValidationError,
+    DocumentValidationError,
+)
 from vault.organizations.models import Membership
 from vault.organizations.roles import MembershipRole
 
 router = APIRouter(prefix="/organizations", tags=["documents"])
+
+ReadMembership = Annotated[
+    Membership,
+    Depends(
+        require_organization_roles(
+            MembershipRole.OWNER,
+            MembershipRole.REVIEWER,
+            MembershipRole.VIEWER,
+        )
+    ),
+]
+
 
 UploadMembership = Annotated[
     Membership,
@@ -35,6 +55,50 @@ UploadMembership = Annotated[
         )
     ),
 ]
+
+
+@router.get(
+    "/{organization_id}/documents",
+    response_model=list[DocumentResponse],
+)
+def list_documents(
+    organization_id: UUID,
+    session: Annotated[Session, Depends(get_database_session)],
+    _membership: ReadMembership,
+) -> list[DocumentResponse]:
+    """List safe document metadata for an organization."""
+    documents = list_documents_for_organization(
+        session,
+        organization_id=organization_id,
+    )
+
+    return [DocumentResponse.model_validate(document) for document in documents]
+
+
+@router.get(
+    "/{organization_id}/documents/{document_id}",
+    response_model=DocumentResponse,
+)
+def read_document_detail(
+    organization_id: UUID,
+    document_id: UUID,
+    session: Annotated[Session, Depends(get_database_session)],
+    _membership: ReadMembership,
+) -> DocumentResponse:
+    """Return safe metadata for one organization-scoped document."""
+    try:
+        document = require_document_for_organization(
+            session,
+            organization_id=organization_id,
+            document_id=document_id,
+        )
+    except DocumentNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document was not found.",
+        ) from exc
+
+    return DocumentResponse.model_validate(document)
 
 
 @router.post(
